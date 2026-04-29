@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centinl — External Review Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── DARK tokens (landing + auditor) ── */
+:root {
+  --ink: #111111;
+  --muted: #666666;
+  --dim: #999999;
+  --oxblood: #222222;
+  --gold: #333333;
+  --green: #888888;
+  --blue: #444444;
+  --bg: #ffffff;
+  --slate: #f5f5f5;
+  --hairline: rgba(0,0,0,0.1);
+  --hairline-strong: rgba(0,0,0,0.2);
+}
+
+html, body { height: 100%; }
+body { font-family: 'Inter Tight', system-ui, sans-serif; min-height: 100vh; }
+
+#landing {
+  background: #111111 !important;
+  color: #ffffff !important;
+}
+#client-portal { background: #ffffff !important; color: #111111 !important; }
+#auditor-dashboard {
+  background: #222222 !important;
+  color: #ffffff !important;
+}
+
+.serif { font-family: 'Fraunces', 'Times New Roman', serif; }
+.mono  { font-family: 'JetBrains Mono', monospace; letter-spacing: -0.01em; }
+.section-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+}
+.oxblood { color: var(--oxblood); }
+.muted   { color: var(--muted); }
+.hidden  { display: none !important; }
+
+/* grain overlay */
+.grain { position: relative; overflow: hidden; }
+.grain::before {
+  content: ''; position: absolute; inset: 0; z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.88 0 0 0 0 0.82 0 0 0 0.08 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+  opacity: 0.5; pointer-events: none !important; mix-blend-mode: overlay;
+}
+.grain > * { position: relative; z-index: 2; }
+#landing header, #landing main, #landing footer { position: relative; z-index: 2; }
+#landing button { position: relative; z-index: 10; cursor: pointer; }
+
+.fade-in { animation: fadeIn 0.5s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+
+/* ── BUTTONS ── */
+.btn-primary {
+  background: var(--ink); color: #ffffff;
+  border: 1px solid var(--ink);
+  padding: 12px 24px; font-size: 14px; font-weight: 500;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); font-family: inherit;
+  border-radius: 4px; min-height: 44px;
+}
+.btn-primary:hover { background: var(--gold); border-color: var(--gold); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.btn-ghost {
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--hairline-strong);
+  padding: 12px 24px; font-size: 14px; font-weight: 500;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  transition: all 0.2s; font-family: inherit;
+  border-radius: 4px; min-height: 44px;
+}
+.btn-ghost:hover { border-color: var(--ink); background: rgba(15,23,42,0.02); }
+
+/* ── qdot status indicators ── */
+.qdot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgba(26,23,20,0.2); flex-shrink: 0; }
+.qdot.active-step { background: #000000; border-color: #000000; }
+.qdot.done-step   { background: #666666; border-color: #666666; }
+.qdot.future-step { background: transparent; border-color: rgba(0,0,0,0.18); }
+
+/* ===================== LANDING ===================== */
+#landing { min-height: 100vh; display: flex; flex-direction: column; }
+#landing header {
+  padding: 28px 40px 24px; display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(26,23,20,0.10);
+}
+#landing .brand { display: flex; align-items: center; gap: 12px; }
+#landing .brand-name { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
+#landing main { flex: 1; display: grid; grid-template-columns: 7fr 5fr; }
+#landing .hero-title { font-family: 'Fraunces', serif; font-size: 56px; line-height: 1.02; font-weight: 400; margin-bottom: 28px; color: #ffffff; }
+#landing .hero-lead  { font-size: 17px; color: #aaaaaa; max-width: 520px; line-height: 1.65; margin-bottom: 36px; }
+#landing footer {
+  padding: 18px 40px; border-top: 1px solid rgba(255,255,255,0.10);
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #888888;
+}
+.fact-row { border-top: 1px solid rgba(255,255,255,0.1); padding: 20px 0; }
+.fact-row:last-child { border-bottom: 1px solid rgba(255,255,255,0.1); }
+.fact-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #94a3b8; margin-bottom: 8px; }
+.fact-value { font-size: 14px; line-height: 1.5; color: #ffffff !important; font-weight: 400; }
+#landing .btn-primary { background: #ffffff !important; color: #0f172a !important; border: 1px solid #ffffff !important; }
+#landing .btn-primary:hover { background: #f1f5f9 !important; transform: translateY(-2px); }
+#landing header { border-bottom: 1px solid rgba(255,255,255,0.1) !important; padding: 32px 40px; }
+#landing main { display: grid; grid-template-columns: 7fr 5fr; flex: 1; }
+#landing main section:first-child { border-right: 1px solid rgba(255,255,255,0.1); padding: 80px 60px; position: relative; }
+#landing main section:last-child { padding: 80px 60px; background: rgba(255,255,255,0.02); }
+#landing .hero-title { color: #ffffff !important; font-size: 64px; margin-bottom: 32px; letter-spacing: -0.02em; }
+#landing .hero-lead { color: #bbbbbb !important; font-size: 18px; line-height: 1.7; margin-bottom: 48px; }
+
+/* ===================== CLIENT PORTAL (LIGHT) ===================== */
+#client-portal, #auditor-dashboard { display: flex; flex-direction: column; min-height: 100vh; }
+
+#client-portal .portal-header {
+  padding: 14px 32px; background: #ffffff;
+  border-bottom: 1px solid rgba(26,23,20,0.10);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; box-shadow: 0 1px 4px rgba(26,23,20,0.06);
+}
+#auditor-dashboard .portal-header {
+  padding: 14px 32px; background: #111111;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+
+.portal-brand       { display: flex; align-items: center; gap: 24px; }
+.portal-brand-inner { display: flex; align-items: center; gap: 10px; }
+.portal-brand-name  { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 500; }
+.portal-divider     { height: 20px; width: 1px; background: rgba(26,23,20,0.15); }
+.portal-client-name { font-size: 13px; font-weight: 600; color: #1a1714; }
+.portal-client-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6b6560; }
+.portal-right       { display: flex; align-items: center; gap: 16px; }
+.portal-user-label  { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6b6560; text-align: right; }
+.portal-user-name   { font-size: 13px; font-weight: 500; color: #1a1714; text-align: right; }
+
+#client-portal .btn-ghost { color: #1a1714; border-color: rgba(26,23,20,0.20); }
+#client-portal .btn-ghost:hover { border-color: rgba(26,23,20,0.40); background: rgba(26,23,20,0.04); }
+
+/* ── portal body ── */
+.portal-body { flex: 1; display: grid; grid-template-columns: 200px 1fr; overflow: hidden; }
+
+/* ── LEFT NAV (light) ── */
+.q-nav {
+  border-right: 1px solid rgba(255,255,255,0.05);
+  overflow-y: auto;
+  height: calc(100vh - 58px);
+  background: var(--gold);
+  display: flex; flex-direction: column;
+}
+.q-nav-inner { flex: 1; overflow-y: auto; padding-top: 14px; padding-bottom: 20px; }
+.q-nav-section-label {
+  padding: 16px 20px 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: #94a3b8;
+}
+.q-nav-item {
+  width: 100%; text-align: left; padding: 12px 20px;
+  border-left: 3px solid transparent; cursor: default;
+  display: flex; align-items: center; gap: 10px;
+  background: none; border-top: none; border-right: none; border-bottom: none;
+  color: #cbd5e1; font-family: inherit; transition: background 0.15s;
+}
+.q-nav-item.nav-done   { color: #888888; border-left-color: #888888; background: rgba(136,136,136,0.05); }
+.q-nav-item.nav-active { border-left-color: #ffffff; background: rgba(255,255,255,0.08); color: #ffffff; font-weight: 500; }
+.q-nav-item.nav-future { color: #666666; }
+.q-nav-item-inner      { flex: 1; min-width: 0; }
+.q-nav-qid   { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #9a9490; margin-bottom: 2px; }
+.q-nav-title { font-size: 11.5px; line-height: 1.35; text-align: left; }
+
+/* ── NAV FOOTER — prev/next controls ── */
+.q-nav-footer {
+  display: flex; padding: 12px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: var(--gold);
+  align-items: center; justify-content: space-between; gap: 12px;
+}
+.nav-step-btn {
+  flex: 1; padding: 8px 0; font-size: 12px; font-weight: 500;
+  cursor: pointer; border: 1px solid rgba(26,23,20,0.18);
+  background: transparent; color: #1a1714; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  transition: all 0.15s;
+}
+.nav-step-btn:hover:not(:disabled) { border-color: rgba(26,23,20,0.38); background: rgba(26,23,20,0.04); }
+.nav-step-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.nav-step-btn.primary-btn {
+  background: #333333; color: #fff; border-color: #333333;
+}
+.nav-step-btn.primary-btn:hover:not(:disabled) { background: #000000; border-color: #000000; }
+.nav-step-counter {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: #9a9490; text-align: center; white-space: nowrap;
+  padding: 0 4px;
+}
+
+/* ── RIGHT — survey column ── */
+.survey-col {
+  display: flex; flex-direction: column;
+  height: calc(100vh - 58px);
+  overflow: hidden;
+}
+
+
+
+/* instruction banner */
+.survey-hint {
+  padding: 8px 24px;
+  background: rgba(0,0,0,0.04);
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #666666;
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+
+.survey-iframe-wrap {
+  flex: 1; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch;
+}
+.survey-iframe-wrap iframe {
+  position: absolute; inset: 0; width: 100%; height: 100%; min-height: 800px; border: none;
+}
+
+/* ===================== AUDITOR DASHBOARD ===================== */
+#auditor-dashboard .portal-header .portal-client-name { color: #ffffff; }
+#auditor-dashboard .portal-header .portal-client-meta { color: #999999; }
+#auditor-dashboard .btn-ghost { color: #ffffff; border-color: rgba(255,255,255,0.24); }
+#auditor-dashboard .btn-ghost:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.04); }
+.auditor-tag { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #999999; margin-left: 8px; }
+.kpi-strip {
+  padding: 22px 32px; border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.4);
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 24px; flex-shrink: 0;
+}
+.kpi-big   { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 500; display: flex; align-items: baseline; gap: 6px; }
+.kpi-total { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8a8577; }
+.kpi-label { margin-top: 4px; }
+.kpi-divider { border-left: 1px solid rgba(232,228,217,0.12); padding-left: 20px; }
+.readiness-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.tracker-area { flex: 1; overflow-y: auto; padding: 24px 32px; }
+.tracker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.tracker-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 500; color: #e8e4d9; }
+.legend { display: flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8a8577; }
+.tracker-table { 
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.1); 
+  border-radius: 4px;
+  overflow-x: auto; 
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.tracker-table table { width: 100%; font-size: 13px; border-collapse: collapse; }
+.tracker-table th {
+  padding: 11px 14px; text-align: left; background: rgba(0,0,0,0.7);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #999999; font-weight: 400;
+}
+.tracker-table td { padding: 11px 14px; border-top: 1px solid rgba(255,255,255,0.1); color: #ffffff; }
+.tracker-table tr { cursor: pointer; transition: background 0.12s; }
+.tracker-table tr:hover td { background: rgba(255,255,255,0.02); }
+.score-footnote { margin-top: 20px; font-size: 12px; color: #8a8577; line-height: 1.7; max-width: 680px; }
+.status-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.status-badge.not_started   { color: #999999; }
+.status-badge.in_progress   { color: #777777; }
+.status-badge.submitted     { color: #555555; }
+.status-badge.clarification { color: #333333; }
+.status-badge.accepted      { color: #888888; }
+
+/* modal */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(6,8,16,0.75);
+  display: flex; align-items: center; justify-content: center;
+}
+.review-pane {
+  width: 780px; max-width: 96vw; max-height: 88vh; overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.2); background: #111111;
+}
+.review-pane-header {
+  padding: 18px 28px; border-bottom: 1px solid rgba(232,228,217,0.12);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.review-pane-body { padding: 24px 28px; }
+.review-pane h3 { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 500; margin-bottom: 8px; color: #ffffff; }
+.input-field {
+  background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.14);
+  color: #ffffff; padding: 10px 14px; font-size: 13px; font-family: inherit; width: 100%;
+}
+.input-field:focus { outline: none; border-color: #666666; }
+textarea.input-field { resize: vertical; }
+.accept-btn {
+  padding: 8px 18px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(136,136,136,0.4); background: transparent; color: #888888; font-family: inherit;
+  transition: all 0.15s;
+}
+.accept-btn:hover { border-color: #888888; }
+.close-btn { background: none; border: none; color: #999999; cursor: pointer; padding: 4px; line-height: 1; }
+.close-btn:hover { color: #ffffff; }
+.auditor-actions { border-top: 1px solid rgba(232,228,217,0.12); padding-top: 20px; margin-top: 20px; }
+.pending-box {
+  margin-bottom: 14px; padding: 12px;
+  border-left: 2px solid #333333; background: rgba(0,0,0,0.1);
+  font-size: 13px; color: #ffffff; line-height: 1.6;
+}
+.pending-box-label { margin-bottom: 6px; color: #666666; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+
+svg { display: inline-block; vertical-align: middle; }
+
+/* ── GHL snippet helper box ── */
+#ghl-snippet-modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(6,8,16,0.85);
+  display: flex; align-items: center; justify-content: center;
+}
+#ghl-snippet-modal .snippet-box {
+  width: 700px; max-width: 96vw; max-height: 90vh; overflow-y: auto;
+  background: #111111; border: 1px solid rgba(255,255,255,0.2);
+  padding: 32px;
+}
+#ghl-snippet-modal h2 { font-family: 'Fraunces', serif; font-size: 22px; color: #ffffff; margin-bottom: 8px; }
+#ghl-snippet-modal p  { font-size: 13px; color: #999999; margin-bottom: 20px; line-height: 1.6; }
+#ghl-snippet-modal pre {
+  background: #000000; border: 1px solid rgba(255,255,255,0.10);
+  padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: #aaaaaa; overflow-x: auto; margin-bottom: 8px; white-space: pre-wrap; word-break: break-all;
+}
+#ghl-snippet-modal .slide-list { max-height: 340px; overflow-y: auto; margin-bottom: 20px; }
+#ghl-snippet-modal .slide-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 0;
+  font-size: 12px; color: #ffffff;
+}
+#ghl-snippet-modal .slide-num {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8a8577;
+  min-width: 36px; padding-top: 2px;
+}
+#ghl-snippet-modal .slide-code {
+  flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: #ffffff; background: rgba(255,255,255,0.06);
+  padding: 6px 10px; border: 1px solid rgba(255,255,255,0.15);
+  user-select: all; cursor: text;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 1100px) {
+  #landing main { grid-template-columns: 1fr !important; }
+  #landing main section:first-child { border-right: none !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; padding: 60px 24px !important; }
+  #landing main section:last-child { padding: 60px 24px !important; }
+  #landing .hero-title { font-size: 38px !important; }
+  #landing .hero-lead { font-size: 16px !important; }
+  
+  .portal-body { grid-template-columns: 1fr !important; height: auto !important; }
+  .q-nav { display: none !important; } 
+  
+  .survey-col { height: auto !important; min-height: 100vh !important; }
+  .survey-iframe-wrap { height: 800px !important; }
+  
+  .kpi-strip { grid-template-columns: repeat(3, 1fr) !important; gap: 16px !important; padding: 16px !important; }
+}
+
+@media (max-width: 600px) {
+  #landing header { padding: 24px 20px; flex-direction: column; gap: 16px; align-items: center; text-align: center; }
+  #landing main section { padding: 48px 24px; }
+  #landing footer { flex-direction: column; gap: 12px; text-align: center; padding: 24px 20px; }
+  
+  .portal-header { padding: 12px 16px; flex-wrap: wrap; gap: 12px; }
+  .portal-brand { gap: 10px; width: 100%; justify-content: space-between; }
+  .portal-divider { display: none; }
+  .portal-client-meta { display: none; }
+  .portal-right { width: 100%; justify-content: center; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px; }
+  
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 16px; }
+  .tracker-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .tracker-title { font-size: 20px; }
+  
+  .review-pane { width: 100vw; max-height: 100vh; height: 100vh; }
+  .mobile-only { display: flex !important; }
+}
+
+.mobile-only { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ===== LANDING ===== -->
+<div id="landing" class="grain fade-in" style="background:#111111 !important; color:#ffffff !important;">
+  <header style="border-bottom:1px solid rgba(255,255,255,0.15) !important;">
+    <div class="brand">
+      <img src="https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png" alt="Centinl Logo" style="height:28px;width:auto;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#999;margin-left:12px;opacity:0.8;">EXTERNAL REVIEW PORTAL</span>
+    </div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#999;">aml compliance · amlctf specialists · QLD</span>
+  </header>
+
+  <main>
+    <section>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#999;margin-bottom:22px;">01 · Engagement open</div>
+      <h1 class="hero-title serif">The response you file now <em style="color:var(--muted);">is</em> the audit we conduct.</h1>
+      <p class="hero-lead">
+        This portal collects your Response Requirement Statement for the external independent review of your AML/CTF program. What you upload here becomes evidence. What you leave blank becomes a finding.
+      </p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button class="btn-primary" onclick="handlePortalEntry()" style="position:relative;z-index:10;background:#ffffff;color:#000000;border-color:#ffffff;">
+          Enter as reporting entity
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8577;margin-top:60px;">
+        <span>conf. channel · TLS 1.3 · AU-east</span>
+        <span>audit ref. GEN-2025-S161-01</span>
+      </div>
+    </section>
+
+    <section>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#9a9490;margin-bottom:22px;">02 · From the principal auditor</div>
+      <blockquote style="font-family:'Fraunces',serif;font-size:22px;line-height:1.35;font-weight:400;margin-bottom:18px;color:#ffffff;">
+        "We have moved from a compliance system that rewarded checkbox behaviour to one that asks: did your actions mitigate the harm?"
+      </blockquote>
+      <div style="font-size:14px;color:#999999;margin-bottom:6px;font-style:italic;">— AUSTRAC CEO Brendan Thomas, 2025</div>
+      <div style="font-size:12px;color:#666666;margin-bottom:60px;letter-spacing:0.02em;">Cited in ACAMS Today by Ramanathan Karuppiah, CAMS-Audit</div>
+      <div class="fact-row">
+        <div class="fact-label">Standard under review</div>
+        <div class="fact-value">AML/CTF Act 2006 (as amended 2024); AML/CTF Rules 2025; AUSTRAC transitional guidance 2026</div>
+      </div>
+      <div class="fact-row" style="margin-top:18px;">
+        <div class="fact-label">Assessment framework</div>
+        <div class="fact-value">Chapter 6 operating pillars — adequacy and efficacy, 100-mark weighted scorecard</div>
+      </div>
+      <div class="fact-row" style="margin-top:18px;">
+        <div class="fact-label">Your auditor</div>
+        <div class="fact-value">Ramanathan Karuppiah MBA · CAMS-Audit Advanced · Fellow, ICA</div>
+      </div>
+    </section>
+  </main>
+
+  <footer style="flex-direction: column; align-items: stretch; padding: 40px 40px 24px; gap: 32px;">
+    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; max-width: 400px; text-align: left;">
+        <span style="color: #ffffff; font-size: 14px; font-family: 'Fraunces', serif; letter-spacing: 0.02em;">AML Compliance</span>
+        <span style="line-height: 1.5; color: #aaaaaa;">Focused on AML/CTF audit readiness, regulatory alignment, and practical compliance execution.</span>
+        <span style="color: #888888; font-style: italic; margin-top: 4px;">Limited availability due to ongoing audit commitments</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; text-align: right;">
+        <span style="color: #ffffff; font-size: 12px; margin-bottom: 4px;">Contact Information</span>
+        <span>Phone: <a href="tel:+61404335811" style="color: #aaaaaa; text-decoration: none;">+61 404 335 811</a></span>
+        <span>Email: <a href="mailto:rknathan@amlcompliance.com.au" style="color: #aaaaaa; text-decoration: none;">rknathan@amlcompliance.com.au</a></span>
+        <span>Location: Eight Mile Plains QLD 4113</span>
+      </div>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px; margin-top: auto;">
+      <span>Copyrights 2026 | Terms & Conditions</span>
+      <span id="portal-version">centinl.external-review / 1.0.0-preview · Sync Engine: v1.0.2</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ===== CLIENT PORTAL (light) ===== -->
+<div id="client-portal" class="hidden">
+
+  <header class="portal-header">
+    <div class="portal-brand">
+      <div class="portal-brand-inner">
+        <img src="https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png" alt="Centinl Logo" style="height:22px;width:auto;">
+      </div>
+      <div class="portal-divider"></div>
+      <div>
+        <div class="portal-client-meta">AUSTRAC Registered · s.161 biennial independent review</div>
+      </div>
+    </div>
+    <div class="portal-right">
+      <button class="btn-ghost" style="padding:6px 12px;font-size:12px;" onclick="logout()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        logout
+      </button>
+    </div>
+  </header>
+
+  <div class="portal-body">
+
+    <!-- LEFT: step nav + controls -->
+    <nav class="q-nav" id="q-nav">
+      <div class="q-nav-inner" id="q-nav-inner"></div>
+
+    </nav>
+
+    <!-- RIGHT: step bar + GHL iframe -->
+    <div class="survey-col">
+
+      <div class="survey-iframe-wrap">
+        <iframe
+          src="https://hl.amlcompliance.com.au/widget/survey/FpIRlUyQPD2piufztMav"
+          style="border:none;width:100%;height:100%;"
+          id="FpIRlUyQPD2piufztMav"
+          title="survey">
+        </iframe>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== AUDITOR DASHBOARD (dark) ===== -->
+<div id="auditor-dashboard" class="hidden">
+  <header class="portal-header">
+    <div class="portal-brand">
+      <div class="portal-brand-inner">
+        <img src="https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png" alt="Centinl Logo" style="height:22px;width:auto;">
+        <span class="auditor-tag">AUDITOR CONSOLE</span>
+      </div>
+      <div class="portal-divider" style="background:rgba(0,0,0,0.12);"></div>
+      <div>
+        <div style="font-size:13px;color:#ffffff;"><span style="color:#888;">engagement </span>2024-25</div>
+        <div class="portal-client-meta" style="color:#888;">s.161 biennial independent review · opened 31 Oct 2025</div>
+      </div>
+    </div>
+    <button class="btn-ghost" style="padding:6px 12px;font-size:12px;color:#ffffff;border-color:rgba(255,255,255,0.2);" onclick="exitToLanding()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      exit
+    </button>
+  </header>
+  <div class="kpi-strip" id="kpi-strip"></div>
+  <div class="tracker-area">
+    <div class="tracker-header">
+      <h2 class="tracker-title serif">Response tracker</h2>
+      <div class="legend">
+        <span style="font-size:10px;letter-spacing:0.1em;">STATUS KEY —</span>
+        <span style="color:#999999;">not started</span>
+        <span style="color:#777777;margin-left:10px;">in progress</span>
+        <span style="color:#555555;margin-left:10px;">submitted</span>
+        <span style="color:#888888;margin-left:10px;">accepted</span>
+        <span style="color:#333333;margin-left:10px;">clarification</span>
+      </div>
+    </div>
+    <div class="tracker-table">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Section</th><th>Question</th><th>Status</th><th>Submitted</th><th>Files</th><th></th></tr>
+        </thead>
+        <tbody id="tracker-tbody"></tbody>
+      </table>
+    </div>
+    <div class="score-footnote">
+      Responses here become evidence in the Chapter 6 scorecard. Each section is double-scored on <em>adequacy</em> (is the control documented) and <em>efficacy</em> (does evidence prove it operates and reduces harm) against a weighted 100-mark framework, with negative deductions for critical shortcomings.
+    </div>
+  </div>
+</div>
+
+<!-- REVIEW PANE MODAL -->
+<div id="review-modal" class="modal-overlay hidden">
+  <div class="review-pane fade-in" id="review-pane-content"></div>
+</div>
+
+<!-- GHL SNIPPET MODAL -->
+<div id="ghl-snippet-modal" class="hidden">
+  <div class="snippet-box fade-in">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h2>GHL Slide Snippets</h2>
+      <button class="close-btn" onclick="closeGHLSnippets()" style="color:#8a8577;font-size:20px;background:none;border:none;cursor:pointer;">✕</button>
+    </div>
+    <p>
+      Paste each snippet into the <strong style="color:#e8e4d9;">Custom HTML block</strong> of the matching slide in GHL.
+      It fires a <code style="color:#d4a84a;">postMessage</code> to this portal when that slide renders,
+      automatically syncing the progress bar and left-nav — no polling, no cross-origin errors.
+    </p>
+    <div class="slide-list" id="ghl-slide-list"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-primary" onclick="copyAllSnippets()" style="font-size:12px;padding:8px 16px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy all to clipboard
+      </button>
+      <button class="btn-ghost" onclick="closeGHLSnippets()" style="font-size:12px;padding:8px 16px;color:#ffffff;">Close</button>
+    </div>
+    <div id="copy-confirm" style="display:none;margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888888;">
+      ✓ Copied all 23 snippets to clipboard
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// AUTH GUARD & PRETTY URL
+// =====================================================================
+(function init() {
+    // Pretty URL logic
+    if (window.location.pathname.endsWith('.html')) {
+        const cleanPath = window.location.pathname.replace('.html', '');
+        window.history.replaceState(null, '', cleanPath);
+    }
+
+    // Migration: Clear old insecure tokens
+    if (localStorage.getItem('ghl_token')) {
+        localStorage.removeItem('ghl_token');
+        localStorage.removeItem('user_email');
+    }
+
+    // Strict Auth Guard
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+        console.warn('Unauthorized. Redirecting...');
+        window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+    }
+})();
+
+function logout() {
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('user_email');
+    window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+}
+
+function handlePortalEntry() {
+    if (localStorage.getItem('jwt_token')) {
+        enterMode('client');
+    } else {
+        window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+    }
+}
+
+// =====================================================================
+// DATA
+// =====================================================================
+const RRS_SPEC = [
+  { id:"Q01", section:"A. Governance & Program",    title:"AML/CTF Program, policies, procedures" },
+  { id:"Q02", section:"A. Governance & Program",    title:"Fraud / Financial Crime Compliance headcount" },
+  { id:"Q03", section:"C. Training",                title:"Training schedule, materials and agenda" },
+  { id:"Q04", section:"B. Personnel Due Diligence", title:"National Police Clearance Certificates" },
+  { id:"Q05", section:"D. Jurisdiction / Delivery", title:"Delivery channel jurisdictions" },
+  { id:"Q06", section:"E. Transaction Monitoring",  title:"Full transaction list — sample month" },
+  { id:"Q07", section:"A. Governance & Program",    title:"AUSTRAC Business Profile" },
+  { id:"Q08", section:"B. Personnel Due Diligence", title:"AMLCO resume / profile" },
+  { id:"Q09", section:"G. Reporting",               title:"Prior year Annual Compliance Report" },
+  { id:"Q10", section:"A. Governance & Program",    title:"AUSTRAC registration & renewals" },
+  { id:"Q11", section:"A. Governance & Program",    title:"AML Compliance framework org chart" },
+  { id:"Q12", section:"H. Outsourcing",             title:"Outsourced compliance functions" },
+  { id:"Q13", section:"F. KYC / Identity",          title:"Data service invoice — IDV / Sanctions / PEP" },
+  { id:"Q14", section:"I. Information Security",    title:"Cyber attack prevention & data protection" },
+  { id:"Q15", section:"E. Transaction Monitoring",  title:"EDD investigations — sample month" },
+  { id:"Q16", section:"G. Reporting",               title:"Suspicious Matter Reports — sample month" },
+  { id:"Q17", section:"B. Personnel Due Diligence", title:"Employee files & periodic due diligence" },
+  { id:"Q18", section:"J. Cash Intensity",          title:"Cash intensity management" },
+  { id:"Q19", section:"F. KYC / Identity",          title:"Customer onboarding — sample month" },
+  { id:"Q20", section:"H. Outsourcing",             title:"Distribution relationship review cadence" },
+  { id:"Q21", section:"K. Privacy",                 title:"Australian Privacy Principles response" },
+  { id:"Q22", section:"L. On-site Inspection",      title:"On-site inspection scope" },
+  { id:"Q23", section:"M. Internal Testing",        title:"Internal reviews and systemic tests" }
+];
+
+// =====================================================================
+// STATE
+// =====================================================================
+let currentStep = 1;
+const TOTAL = RRS_SPEC.length;
+let syncLocked = true; // Lock sync for a moment to prevent GHL noise
+
+// Release the lock after 1.5 seconds
+setTimeout(() => { 
+  syncLocked = false; 
+  console.log('Smart Sync: Ready. listening for progress...');
+  const v = document.getElementById('portal-version');
+  if (v) v.style.color = '#888888';
+}, 1500);
+
+// Global sync helpers (defined early to prevent ReferenceErrors)
+window.setStep = function(n) {
+  const step = parseInt(n);
+  if (step >= 1 && step <= TOTAL) {
+    currentStep = step;
+    updateStepBar(currentStep);
+    renderClientNav(currentStep);
+    console.log('Portal synced to step:', step);
+  }
+};
+
+window.resetPortal = function() {
+  window.setStep(1);
+  console.log('Portal reset to step 1');
+};
+
+// =====================================================================
+// STEP BAR UPDATE
+// =====================================================================
+function updateStepBar(step) {
+  const pct = Math.round((step / TOTAL) * 100);
+
+  
+  // Desktop counters
+  if (document.getElementById('nav-step-counter')) {
+    document.getElementById('nav-step-counter').textContent = `${step} / ${TOTAL}`;
+    document.getElementById('btn-prev').disabled = step <= 1;
+    document.getElementById('btn-next').disabled = step >= TOTAL;
+  }
+
+  // Mobile counters
+  if (document.getElementById('nav-step-counter-mobile')) {
+    document.getElementById('nav-step-counter-mobile').textContent = `${step} / ${TOTAL}`;
+    document.getElementById('btn-prev-mobile').disabled = step <= 1;
+    document.getElementById('btn-next-mobile').disabled = step >= TOTAL;
+  }
+}
+
+// =====================================================================
+// LEFT NAV RENDER
+// =====================================================================
+function renderClientNav(step) {
+  const inner = document.getElementById('q-nav-inner');
+  
+  // Static list of sections in correct A-M order
+  const sections = [
+    "A. Governance & Program",
+    "B. Personnel Due Diligence",
+    "C. Training",
+    "D. Jurisdiction / Delivery",
+    "E. Transaction Monitoring",
+    "F. KYC / Identity",
+    "G. Reporting",
+    "H. Outsourcing",
+    "I. Information Security",
+    "J. Cash Intensity",
+    "K. Privacy",
+    "L. On-site Inspection",
+    "M. Internal Testing"
+  ];
+
+  inner.innerHTML = `
+    <div style="padding: 16px 0;">
+      <div class="q-nav-section-label" style="margin-bottom: 12px;">Review Sections</div>
+      ${sections.map(sec => `
+        <div style="padding: 10px 24px; font-size: 11.5px; color: #ffffff; border-left: 3px solid transparent;">
+          ${sec}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// =====================================================================
+// MANUAL STEP CONTROL (prev/next buttons)
+// =====================================================================
+function manualStep(delta) {
+  const next = Math.min(TOTAL, Math.max(1, currentStep + delta));
+  if (next === currentStep) return;
+  currentStep = next;
+  updateStepBar(currentStep);
+  renderClientNav(currentStep);
+}
+
+// =====================================================================
+// postMessage LISTENER — receives centinlStep from GHL slide HTML
+// This is the ONLY mechanism. No polling. No setInterval.
+// In each GHL slide's custom HTML block, add:
+//   <script>window.parent.postMessage({ centinlStep: N }, '*');<\/script>
+// where N is the slide number (1–23).
+// =====================================================================
+window.addEventListener('message', function(event) {
+  if (!event.data) return;
+  const data = event.data;
+  
+  if (data && typeof data.centinlStep === 'number') {
+    if (syncLocked) {
+      console.warn('Smart Sync: Boot lock active. Ignoring step:', data.centinlStep);
+      return;
+    }
+
+    const step = data.centinlStep;
+    const diff = Math.abs(step - currentStep);
+    
+    // Accept if it's a small move OR if we are initializing at Step 1
+    if (step >= 1 && step <= TOTAL && (diff <= 2 || currentStep === 1)) {
+      if (step !== currentStep) {
+        console.log('Smart Sync: Moving to step', step);
+        window.setStep(step);
+      }
+    } else {
+      console.warn('Smart Sync: Ignoring unrealistic jump to', step, 'from', currentStep);
+    }
+  }
+});
+
+// =====================================================================
+// MODE SWITCHING
+// =====================================================================
+function enterMode(mode) {
+  document.getElementById('landing').classList.add('hidden');
+  if (mode === 'client') {
+    document.getElementById('client-portal').classList.remove('hidden');
+    document.getElementById('auditor-dashboard').classList.add('hidden');
+    renderClientNav(currentStep);
+    updateStepBar(currentStep);
+  } else {
+    document.getElementById('auditor-dashboard').classList.remove('hidden');
+    document.getElementById('client-portal').classList.add('hidden');
+    renderKpi();
+    renderTrackerTable();
+  }
+}
+
+function exitToLanding() {
+  document.getElementById('landing').classList.remove('hidden');
+  document.getElementById('client-portal').classList.add('hidden');
+  document.getElementById('auditor-dashboard').classList.add('hidden');
+}
+
+// =====================================================================
+// GHL SNIPPET HELPER
+// =====================================================================
+function showGHLSnippets() {
+  const list = document.getElementById('ghl-slide-list');
+  list.innerHTML = RRS_SPEC.map((q, i) => {
+    const n = i + 1;
+    const snippet = `<script>(function(){var s=${n};var i=setInterval(function(){if(document.currentScript.parentElement.offsetParent!==null){window.parent.postMessage({centinlStep:s},'*');clearInterval(i);}},500);})();<\/script>`;
+    return `<div class="slide-row">
+      <div class="slide-num">Slide ${n}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;color:#8a8577;margin-bottom:4px;">${q.id} · ${q.title}</div>
+        <div class="slide-code" onclick="this.select()">${snippet}</div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('ghl-snippet-modal').classList.remove('hidden');
+}
+
+function closeGHLSnippets() {
+  document.getElementById('ghl-snippet-modal').classList.add('hidden');
+}
+
+function copyAllSnippets() {
+  const all = RRS_SPEC.map((q, i) => {
+    const n = i + 1;
+    return `<!-- Slide ${n}: ${q.id} · ${q.title} -->\n<script>(function(){var s=${n};var i=setInterval(function(){if(document.currentScript.parentElement.offsetParent!==null){window.parent.postMessage({centinlStep:s},'*');clearInterval(i);}},500);})();<\/script>`;
+  }).join('\n\n');
+  navigator.clipboard.writeText(all).then(() => {
+    const confirm = document.getElementById('copy-confirm');
+    confirm.style.display = 'block';
+    setTimeout(() => confirm.style.display = 'none', 3000);
+  });
+}
+
+document.getElementById('ghl-snippet-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeGHLSnippets();
+});
+
+// =====================================================================
+// AUDITOR DASHBOARD
+// =====================================================================
+const STATUS = {
+  NOT_STARTED:'not_started', IN_PROGRESS:'in_progress',
+  SUBMITTED:'submitted', CLARIFICATION:'clarification', ACCEPTED:'accepted'
+};
+let answers = {};
+const STORAGE_KEY = 'centinl:v1:GEN-2025';
+
+function loadAnswers() {
+  try { const r = localStorage.getItem(STORAGE_KEY); if(r) answers = JSON.parse(r); } catch {}
+}
+function saveAnswers() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(answers)); } catch {}
+}
+function questionStatus(a) {
+  if (!a) return STATUS.NOT_STARTED;
+  if (a.clarificationRequested) return STATUS.CLARIFICATION;
+  if (a.accepted) return STATUS.ACCEPTED;
+  if (a.submittedAt) return STATUS.SUBMITTED;
+  if (a.text || a.number || a.yesno || (a.files && a.files.length)) return STATUS.IN_PROGRESS;
+  return STATUS.NOT_STARTED;
+}
+function statusLabel(s) {
+  return { not_started:'not started', in_progress:'draft', submitted:'submitted', clarification:'clarification needed', accepted:'accepted' }[s] || s;
+}
+function fmtDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function icon(name, size=16, extra='') {
+  const s=size, icons={
+    checkCircle:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+    clock:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    eye:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    paperclip:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
+    check:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ${extra}><polyline points="20 6 9 17 4 12"/></svg>`,
+    message:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    x:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ${extra}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    fileText:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ${extra}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  };
+  return icons[name] || '';
+}
+
+function computeAuditorStats() {
+  let complete=0,partial=0,none=0,accepted=0,clar=0;
+  RRS_SPEC.forEach(q => {
+    const st = questionStatus(answers[q.id]);
+    if(st===STATUS.ACCEPTED) accepted++;
+    else if(st===STATUS.SUBMITTED) complete++;
+    else if(st===STATUS.IN_PROGRESS) partial++;
+    else if(st===STATUS.CLARIFICATION) clar++;
+    else none++;
+  });
+  const total=RRS_SPEC.length;
+  const essentialThreshold=Math.ceil(RRS_SPEC.length*0.7);
+  const readyToStart=(complete+accepted)>=essentialThreshold;
+  return{complete,partial,none,accepted,clar,total,essentialThreshold,readyToStart};
+}
+function renderKpi() {
+  const s=computeAuditorStats();
+  document.getElementById('kpi-strip').innerHTML=`
+    <div><div class="kpi-big" style="color:#ffffff;">${s.accepted+s.complete}<span class="kpi-total">/ ${s.total}</span></div><div class="section-tag kpi-label" style="color:#999999;">received</div></div>
+    <div><div class="kpi-big" style="color:#888888;">${s.accepted}</div><div class="section-tag kpi-label" style="color:#999999;">accepted</div></div>
+    <div><div class="kpi-big" style="color:#333333;">${s.clar}</div><div class="section-tag kpi-label" style="color:#999999;">clarification out</div></div>
+    <div><div class="kpi-big" style="color:#777777;">${s.partial}</div><div class="section-tag kpi-label" style="color:#999999;">in progress</div></div>
+    <div><div class="kpi-big" style="color:#444444;">${s.none}</div><div class="section-tag kpi-label" style="color:#999999;">not started</div></div>
+    <div class="kpi-divider">
+      <div class="section-tag" style="margin-bottom:6px;color:#999999;">Audit readiness</div>
+      ${s.readyToStart
+        ? `<div class="readiness-row">${icon('checkCircle',18,'style="color:#888888;"')}<span style="font-size:13px;color:#ffffff;">Ready to commence fieldwork</span></div>`
+        : `<div class="readiness-row">${icon('clock',18,'style="color:#777777;"')}<div><div style="font-size:13px;color:#ffffff;">Awaiting minimum docs</div><div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#999999;">threshold: ${s.essentialThreshold} required</div></div></div>`
+      }
+    </div>`;
+}
+function renderTrackerTable() {
+  const tbody=document.getElementById('tracker-tbody');
+  tbody.innerHTML=RRS_SPEC.map(q=>{
+    const a=answers[q.id], st=questionStatus(a);
+    const secShort=q.section.replace(/^\w\. /,'');
+    const submitted=a?.submittedAt?fmtDateTime(a.submittedAt):'—';
+    const files=a?.files?.length?`<span style="display:inline-flex;align-items:center;gap:4px;">${icon('paperclip',11)} ${a.files.length}</span>`:'<span style="color:#8a8577;">—</span>';
+    return`<tr onclick="openReviewPane('${q.id}')">
+      <td style="font-family:JetBrains Mono,monospace;font-size:12px;color:#999999;">${q.id}</td>
+      <td style="font-size:12px;color:#999999;">${secShort}</td>
+      <td style="color:#ffffff;">${q.title}</td>
+      <td><span class="status-badge ${st}">${statusLabel(st)}</span></td>
+      <td style="font-family:JetBrains Mono,monospace;font-size:11px;color:#999999;">${submitted}</td>
+      <td style="font-family:JetBrains Mono,monospace;font-size:12px;">${files}</td>
+      <td style="text-align:right;color:#999999;">${icon('eye',14)}</td>
+    </tr>`;
+  }).join('');
+}
+function openReviewPane(qid) {
+  const q=RRS_SPEC.find(x=>x.id===qid), a=answers[qid]||{}, st=questionStatus(a);
+  const modal=document.getElementById('review-modal'), pane=document.getElementById('review-pane-content');
+  let auditorActionsHtml='';
+  if(st===STATUS.SUBMITTED||st===STATUS.ACCEPTED||st===STATUS.CLARIFICATION){
+    if(st===STATUS.CLARIFICATION&&a.clarificationNote){
+      auditorActionsHtml=`<div class="auditor-actions"><div class="section-tag" style="margin-bottom:10px;color:#999999;">Auditor action</div><div class="pending-box"><div class="pending-box-label">pending — sent to client</div>${escHtml(a.clarificationNote)}</div></div>`;
+    } else if(st!==STATUS.CLARIFICATION){
+      auditorActionsHtml=`<div class="auditor-actions"><div class="section-tag" style="margin-bottom:10px;color:#999999;">Auditor action</div><textarea class="input-field" rows="3" id="clar-note-${qid}" placeholder="Note to client…" style="margin-bottom:10px;"></textarea><div style="display:flex;gap:10px;"><button class="accept-btn" onclick="acceptResponse('${qid}')">${icon('check',13)} accept</button><button class="btn-primary" style="padding:8px 18px;font-size:13px;" onclick="requestClarification('${qid}')">${icon('message',13)} request clarification</button></div></div>`;
+    }
+  }
+  pane.innerHTML=`<div class="review-pane-header"><div style="display:flex;align-items:center;gap:14px;"><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:#999999;">${q.id}</span><span style="font-family:JetBrains Mono,monospace;font-size:10px;color:#999999;letter-spacing:0.14em;text-transform:uppercase;">${q.section}</span></div><button class="close-btn" onclick="closeReviewPane()">${icon('x',18)}</button></div><div class="review-pane-body"><h3>${q.title}</h3>${auditorActionsHtml}</div>`;
+  modal.classList.remove('hidden');
+}
+function closeReviewPane(){ document.getElementById('review-modal').classList.add('hidden'); }
+function acceptResponse(qid){
+  answers[qid]={...(answers[qid]||{}),accepted:true,acceptedAt:new Date().toISOString(),clarificationRequested:false};
+  saveAnswers(); closeReviewPane(); renderKpi(); renderTrackerTable();
+}
+function requestClarification(qid){
+  const note=document.getElementById('clar-note-'+qid)?.value||'';
+  if(!note.trim())return;
+  answers[qid]={...(answers[qid]||{}),clarificationRequested:true,clarificationNote:note,clarificationRequestedAt:new Date().toISOString(),accepted:false};
+  saveAnswers(); closeReviewPane(); renderKpi(); renderTrackerTable();
+}
+document.getElementById('review-modal').addEventListener('click',function(e){if(e.target===this)closeReviewPane();});
+loadAnswers();
+</script>
+
+<!-- GHL embed — loaded last so any parse errors in it cannot crash our code above -->
+<script>
+(function() {
+  var s = document.createElement('script');
+  s.src = 'https://hl.amlcompliance.com.au/js/form_embed.js';
+  s.onerror = function() { console.warn('GHL form_embed.js failed to load — iframe will still work.'); };
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

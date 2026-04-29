@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication | AUSTRAC Audit Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter+Tight:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #000000;
+            --paper: #ffffff;
+            --slate: #f8f9fa;
+            --muted: #666666;
+            --hairline: rgba(0, 0, 0, 0.08);
+            --gold: #d4a84a;
+            --accent: #1a1a1a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter Tight', sans-serif;
+            background-color: #050505;
+            color: var(--paper);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Grain overlay for premium feel */
+        .grain::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.88 0 0 0 0 0.82 0 0 0 0.08 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+            opacity: 0.15;
+            pointer-events: none;
+            mix-blend-mode: overlay;
+        }
+
+        .auth-card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 440px;
+            background: rgba(20, 20, 20, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 48px;
+            border-radius: 4px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .brand {
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .brand img {
+            height: 32px;
+            margin-bottom: 24px;
+            filter: brightness(0) invert(1);
+        }
+
+        .brand h1 {
+            font-family: 'Fraunces', serif;
+            font-size: 28px;
+            font-weight: 400;
+            margin-bottom: 8px;
+            letter-spacing: -0.02em;
+        }
+
+        .brand p {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+
+        .form-group {
+            margin-bottom: 28px;
+            position: relative;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #888;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 14px 0;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            font-size: 15px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            border-bottom-color: #ffffff;
+        }
+
+        .form-group input::placeholder {
+            color: #444;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 18px;
+            background: #ffffff;
+            color: #000000;
+            border: none;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border-radius: 2px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 12px;
+        }
+
+        .btn-submit:hover {
+            background: #f0f0f0;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 255, 255, 0.15);
+        }
+
+        .status-msg {
+            margin-top: 24px;
+            font-size: 12px;
+            text-align: center;
+            min-height: 1.5em;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .error { color: #ff5555; }
+        .success { color: #55ff55; }
+
+        .toggle-section {
+            margin-top: 40px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .toggle-section a {
+            color: #ffffff;
+            cursor: pointer;
+            font-weight: 600;
+            margin-left: 8px;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+
+        .toggle-section a:hover {
+            border-bottom-color: #ffffff;
+        }
+
+        .hidden { display: none; }
+
+        /* Smooth fade transitions */
+        .fade-in {
+            animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Decorative elements */
+        .auth-card::after {
+            content: '';
+            position: absolute;
+            top: -1px; left: -1px; right: -1px; bottom: -1px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 40%, transparent 60%, rgba(255,255,255,0.05) 100%);
+            pointer-events: none;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body class="grain">
+    <div class="auth-card fade-in">
+        <div class="brand">
+            <img src="https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png" alt="Centinl Logo">
+            <h1 id="authTitle">Portal Access</h1>
+            <p id="authSubtitle">s.161 Independent Review</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label>Corporate Email</label>
+                <input type="email" id="loginEmail" placeholder="compliance@entity.com.au" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="loginPassword" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn-submit">Initialize Session</button>
+        </form>
+
+        <form id="signupForm" class="hidden">
+            <div class="form-group">
+                <label>Legal Entity Name</label>
+                <input type="text" id="regCompany" placeholder="ABC Pty Ltd" required>
+            </div>
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" id="regName" placeholder="Primary Compliance Officer" required>
+            </div>
+            <div class="form-group">
+                <label>Corporate Email</label>
+                <input type="email" id="regEmail" placeholder="compliance@entity.com.au" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="regPassword" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn-submit">Request Credentials</button>
+        </form>
+
+        <div id="statusMsg" class="status-msg"></div>
+
+        <div class="toggle-section">
+            <span id="toggleText">Unauthorized entity?</span>
+            <a id="toggleBtn">Apply for Access</a>
+        </div>
+    </div>
+
+    <script>
+        // Backend Configuration
+        const BASE_URL = 'http://10.66.8.56:5001'; 
+
+        const loginForm = document.getElementById('loginForm');
+        const signupForm = document.getElementById('signupForm');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const statusMsg = document.getElementById('statusMsg');
+        const authTitle = document.getElementById('authTitle');
+        const authSubtitle = document.getElementById('authSubtitle');
+        const toggleText = document.getElementById('toggleText');
+
+        // Toggle Logic
+        toggleBtn.onclick = () => {
+            const isLoginVisible = !loginForm.classList.contains('hidden');
+            
+            if (isLoginVisible) {
+                // Switch to Signup
+                loginForm.classList.add('hidden');
+                signupForm.classList.remove('hidden');
+                signupForm.classList.add('fade-in');
+                authTitle.innerText = 'Registration';
+                authSubtitle.innerText = 'Onboarding New Entity';
+                toggleBtn.innerText = 'Return to Login';
+                toggleText.innerText = 'Already authorized?';
+            } else {
+                // Switch to Login
+                signupForm.classList.add('hidden');
+                loginForm.classList.remove('hidden');
+                loginForm.classList.add('fade-in');
+                authTitle.innerText = 'Portal Access';
+                authSubtitle.innerText = 's.161 Independent Review';
+                toggleBtn.innerText = 'Apply for Access';
+                toggleText.innerText = 'Unauthorized entity?';
+            }
+            statusMsg.innerText = '';
+            statusMsg.className = 'status-msg';
+        };
+
+        // Auth Handler
+        const handleAuth = async (e, endpoint, body) => {
+            e.preventDefault();
+            statusMsg.innerText = 'Authenticating...';
+            statusMsg.className = 'status-msg';
+            
+            try {
+                const res = await fetch(`${BASE_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    statusMsg.innerText = 'Access Granted. Redirecting...';
+                    statusMsg.className = 'status-msg success';
+                    localStorage.setItem('jwt_token', data.token);
+                    localStorage.setItem('user_email', body.email);
+                    
+                    setTimeout(() => {
+                        window.location.href = '../audit';
+                    }, 1000);
+                } else {
+                    statusMsg.innerText = data.message || 'Authentication Failed';
+                    statusMsg.className = 'status-msg error';
+                }
+            } catch (err) {
+                statusMsg.innerText = 'Gateway Error: Unable to connect to auth service.';
+                statusMsg.className = 'status-msg error';
+            }
+        };
+
+        loginForm.onsubmit = (e) => handleAuth(e, '/api/login', { 
+            email: document.getElementById('loginEmail').value,
+            password: document.getElementById('loginPassword').value
+        });
+
+        signupForm.onsubmit = (e) => handleAuth(e, '/api/signup', { 
+            name: document.getElementById('regName').value, 
+            email: document.getElementById('regEmail').value,
+            company: document.getElementById('regCompany').value,
+            password: document.getElementById('regPassword').value
+        });
+
+        // Auto-check if already logged in
+        window.onload = () => {
+            if (localStorage.getItem('jwt_token')) {
+                window.location.href = '../audit';
+            }
+        };
+    </script>
+</body>
+</html>
