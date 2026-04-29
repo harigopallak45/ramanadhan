@@ -215,6 +215,9 @@
                 <label>Password</label>
                 <input type="password" id="loginPassword" placeholder="••••••••" required>
             </div>
+            <div style="text-align: right; margin-top: -20px; margin-bottom: 24px;">
+                <a id="forgotBtn" style="font-size: 11px; color: #666; cursor: pointer; font-family: 'JetBrains Mono', monospace; text-transform: uppercase;">Forgot Password?</a>
+            </div>
             <button type="submit" class="btn-submit">Initialize Session</button>
         </form>
 
@@ -238,6 +241,15 @@
             <button type="submit" class="btn-submit">Request Credentials</button>
         </form>
 
+        <form id="forgotForm" class="hidden">
+            <div class="form-group">
+                <label>Recovery Email</label>
+                <input type="email" id="forgotEmail" placeholder="compliance@entity.com.au" required>
+            </div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 24px; line-height: 1.6;">Enter your email to verify your account and receive administrator contact details for password recovery.</p>
+            <button type="submit" class="btn-submit">Verify Account</button>
+        </form>
+
         <div id="statusMsg" class="status-msg"></div>
 
         <div class="toggle-section">
@@ -248,32 +260,42 @@
 
     <script>
         // Backend Configuration
-        const BASE_URL = 'http://10.66.8.56:5001'; 
+        const BASE_URL = 'http://43.205.125.70:5001'; 
 
         const loginForm = document.getElementById('loginForm');
         const signupForm = document.getElementById('signupForm');
+        const forgotForm = document.getElementById('forgotForm');
         const toggleBtn = document.getElementById('toggleBtn');
+        const forgotBtn = document.getElementById('forgotBtn');
         const statusMsg = document.getElementById('statusMsg');
         const authTitle = document.getElementById('authTitle');
         const authSubtitle = document.getElementById('authSubtitle');
         const toggleText = document.getElementById('toggleText');
 
         // Toggle Logic
-        toggleBtn.onclick = () => {
-            const isLoginVisible = !loginForm.classList.contains('hidden');
+        const showForm = (formType) => {
+            loginForm.classList.add('hidden');
+            signupForm.classList.add('hidden');
+            forgotForm.classList.add('hidden');
             
-            if (isLoginVisible) {
-                // Switch to Signup
-                loginForm.classList.add('hidden');
+            statusMsg.innerText = '';
+            statusMsg.className = 'status-msg';
+
+            if (formType === 'signup') {
                 signupForm.classList.remove('hidden');
                 signupForm.classList.add('fade-in');
                 authTitle.innerText = 'Registration';
                 authSubtitle.innerText = 'Onboarding New Entity';
                 toggleBtn.innerText = 'Return to Login';
                 toggleText.innerText = 'Already authorized?';
+            } else if (formType === 'forgot') {
+                forgotForm.classList.remove('hidden');
+                forgotForm.classList.add('fade-in');
+                authTitle.innerText = 'Recovery';
+                authSubtitle.innerText = 'Password Reset Request';
+                toggleBtn.innerText = 'Return to Login';
+                toggleText.innerText = 'Remembered?';
             } else {
-                // Switch to Login
-                signupForm.classList.add('hidden');
                 loginForm.classList.remove('hidden');
                 loginForm.classList.add('fade-in');
                 authTitle.innerText = 'Portal Access';
@@ -281,14 +303,19 @@
                 toggleBtn.innerText = 'Apply for Access';
                 toggleText.innerText = 'Unauthorized entity?';
             }
-            statusMsg.innerText = '';
-            statusMsg.className = 'status-msg';
         };
+
+        toggleBtn.onclick = () => {
+            const isLoginVisible = !loginForm.classList.contains('hidden');
+            showForm(isLoginVisible ? 'signup' : 'login');
+        };
+
+        forgotBtn.onclick = () => showForm('forgot');
 
         // Auth Handler
         const handleAuth = async (e, endpoint, body) => {
             e.preventDefault();
-            statusMsg.innerText = 'Authenticating...';
+            statusMsg.innerText = 'Processing Request...';
             statusMsg.className = 'status-msg';
             
             try {
@@ -300,6 +327,12 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    if (endpoint === '/api/forgot-password') {
+                        statusMsg.innerText = data.message;
+                        statusMsg.className = 'status-msg success';
+                        return;
+                    }
+
                     statusMsg.innerText = 'Access Granted. Redirecting...';
                     statusMsg.className = 'status-msg success';
                     localStorage.setItem('jwt_token', data.token);
@@ -309,8 +342,19 @@
                         window.location.href = '../audit';
                     }, 1000);
                 } else {
-                    statusMsg.innerText = data.message || 'Authentication Failed';
+                    statusMsg.innerText = data.message || 'Action Failed';
                     statusMsg.className = 'status-msg error';
+
+                    // Special case: Account exists but needs registration
+                    if (data.needsRegistration) {
+                        setTimeout(() => {
+                            const emailValue = body.email;
+                            showForm('signup');
+                            document.getElementById('regEmail').value = emailValue;
+                            statusMsg.innerText = data.message;
+                            statusMsg.className = 'status-msg error';
+                        }, 2000);
+                    }
                 }
             } catch (err) {
                 statusMsg.innerText = 'Gateway Error: Unable to connect to auth service.';
@@ -328,6 +372,10 @@
             email: document.getElementById('regEmail').value,
             company: document.getElementById('regCompany').value,
             password: document.getElementById('regPassword').value
+        });
+
+        forgotForm.onsubmit = (e) => handleAuth(e, '/api/forgot-password', {
+            email: document.getElementById('forgotEmail').value
         });
 
         // Auto-check if already logged in
