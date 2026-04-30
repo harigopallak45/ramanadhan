@@ -132,7 +132,13 @@ app.post('/api/signup', async (req, res) => {
 
             // Case: User exists but has no password -> UPDATE existing contact
             console.log(`[SIGNUP] Updating existing contact: ${existingUser.id}`);
+            
+            // Add the audit tag to the existing user
+            const existingTags = existingUser.tags || [];
+            const newTags = [...new Set([...existingTags, 'audit user'])];
+
             const updateResponse = await axios.put(`https://services.leadconnectorhq.com/contacts/${existingUser.id}`, {
+                tags: newTags,
                 customFields: [
                     {
                         id: PASSWORD_FIELD_ID,
