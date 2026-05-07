@@ -601,21 +601,21 @@ svg { display: inline-block; vertical-align: middle; }
     const token = localStorage.getItem('jwt_token');
     if (!token) {
         console.warn('Unauthorized. Redirecting...');
-        window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+        window.location.href = 'auth.html';
     }
 })();
 
 function logout() {
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user_email');
-    window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+    window.location.href = 'auth.html';
 }
 
 function handlePortalEntry() {
     if (localStorage.getItem('jwt_token')) {
         enterMode('client');
     } else {
-        window.location.href = 'https://austrac.amlcompliance.com.au/audit/login';
+        window.location.href = 'auth.html';
     }
 }
 

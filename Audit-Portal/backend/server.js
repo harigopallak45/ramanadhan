@@ -87,7 +87,7 @@ app.post('/api/login', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[LOGIN ERROR]:', error.response?.data || error.message);
+        console.error('[LOGIN ERROR]:', (error.response && error.response.data) || error.message);
         res.status(500).json({ success: false, message: 'Error during login process' });
     }
 });
@@ -218,7 +218,7 @@ app.post('/api/signup', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[SIGNUP ERROR]:', error.response?.data || error.message);
+        console.error('[SIGNUP ERROR]:', (error.response && error.response.data) || error.message);
         res.status(500).json({ success: false, message: 'Error creating audit account' });
     }
 });
@@ -259,7 +259,7 @@ app.post('/api/forgot-password', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[FORGOT PASSWORD ERROR]:', error.response?.data || error.message);
+        console.error('[FORGOT PASSWORD ERROR]:', (error.response && error.response.data) || error.message);
         res.status(500).json({ success: false, message: 'Error verifying account.' });
     }
 });
