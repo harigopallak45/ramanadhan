@@ -262,7 +262,7 @@
 
     <script>
         // Backend Configuration (Requires SSL for HTTPS frontend)
-        const BASE_URL = 'https://test.truewilly.com'; 
+        const BASE_URL = 'https://amlcompliance.com.au/hlgp'; 
 
         const loginForm = document.getElementById('loginForm');
         const signupForm = document.getElementById('signupForm');
@@ -341,7 +341,7 @@
                     localStorage.setItem('user_email', body.email);
                     
                     setTimeout(() => {
-                        window.location.href = '../audit';
+                        window.location.href = 'audit.html';
                     }, 1000);
                 } else {
                     statusMsg.innerText = data.message || 'Action Failed';
@@ -380,10 +380,9 @@
             email: document.getElementById('forgotEmail').value
         });
 
-        // Auto-check if already logged in
         window.onload = () => {
             if (localStorage.getItem('jwt_token')) {
-                window.location.href = '../audit';
+                window.location.href = 'audit.html';
             }
         };
     </script>

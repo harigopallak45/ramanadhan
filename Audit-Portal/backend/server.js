@@ -18,7 +18,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 const PASSWORD_FIELD_ID = process.env.GHL_PASSWORD_FIELD_ID || 'audit_password'; 
 
 // Login Endpoint
-app.post('/api/login', async (req, res) => {
+app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -93,7 +93,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Signup Endpoint
-app.post('/api/signup', async (req, res) => {
+app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
     const { name, email, company, password } = req.body;
 
     if (!email || !name || !password) {
@@ -224,7 +224,7 @@ app.post('/api/signup', async (req, res) => {
 });
 
 // Forgot Password / Contact Admin Endpoint
-app.post('/api/forgot-password', async (req, res) => {
+app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res) => {
     const { email } = req.body;
     
     if (!email) {
