@@ -48,12 +48,7 @@ body { font-family: 'Inter Tight', system-ui, sans-serif; min-height: 100vh; }
 .hidden  { display: none !important; }
 
 /* grain overlay */
-.grain { position: relative; overflow: hidden; }
-.grain::before {
-  content: ''; position: absolute; inset: 0; z-index: 0;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.88 0 0 0 0 0.82 0 0 0 0.08 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
-  opacity: 0.5; pointer-events: none !important; mix-blend-mode: overlay;
-}
+/* Grain overlay removed */
 .grain > * { position: relative; z-index: 2; }
 #landing header, #landing main, #landing footer { position: relative; z-index: 2; }
 #landing button { position: relative; z-index: 10; cursor: pointer; }
@@ -601,21 +596,21 @@ svg { display: inline-block; vertical-align: middle; }
     const token = localStorage.getItem('jwt_token');
     if (!token) {
         console.warn('Unauthorized. Redirecting...');
-        window.location.href = 'auth.html';
+        window.location.href = 'login-page';
     }
 })();
 
 function logout() {
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user_email');
-    window.location.href = 'auth.html';
+    window.location.href = 'login-page';
 }
 
 function handlePortalEntry() {
     if (localStorage.getItem('jwt_token')) {
         enterMode('client');
     } else {
-        window.location.href = 'auth.html';
+        window.location.href = 'login-page';
     }
 }
 

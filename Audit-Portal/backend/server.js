@@ -6,8 +6,48 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-app.use(cors());
+const path = require('path');
+
+// ABSOLUTE CORS HANDLING (MUST BE FIRST)
+app.use((req, res, next) => {
+    const origin = req.headers.origin || '*';
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400');
+    
+    // Log EVERY request for live debugging
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} from ${origin}`);
+    
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 app.use(express.json());
+
+// Pretty URL Middleware: Redirect .html to clean versions
+app.use((req, res, next) => {
+    if (req.path.endsWith('.html') && !req.path.includes('/api/')) {
+        const newPath = req.path.replace('.html', '');
+        return res.redirect(301, newPath);
+    }
+    next();
+});
+
+// Request Logger
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    next();
+});
+
+// Serve static files from the "frontend" directory
+// Supporting various prefixes used in production (hlgp, audit, v2)
+app.use('/hlgp', express.static(path.join(__dirname, '../frontend')));
+app.use('/audit', express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, '../frontend')));
 
 const PORT = process.env.PORT || 5001;
 const GHL_API_KEY = process.env.GHL_API_KEY;
@@ -15,9 +55,48 @@ const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
 // Configuration: Custom Field ID for the hashed password
-const PASSWORD_FIELD_ID = process.env.GHL_PASSWORD_FIELD_ID || 'audit_password'; 
+let PASSWORD_FIELD_ID = process.env.GHL_PASSWORD_FIELD_ID || 'audit_password'; 
+
+// Helper to resolve Field ID if a Key is provided
+async function resolveFieldId() {
+    try {
+        console.log(`[GHL] Attempting to resolve custom field: ${PASSWORD_FIELD_ID}`);
+        const response = await axios.get(`https://services.leadconnectorhq.com/locations/${GHL_LOCATION_ID}/customFields`, {
+            headers: {
+                'Authorization': `Bearer ${GHL_API_KEY}`,
+                'Version': '2021-07-28'
+            }
+        });
+        
+        const fields = response.data.customFields || [];
+        const field = fields.find(f => 
+            f.id === PASSWORD_FIELD_ID || 
+            f.fieldKey === PASSWORD_FIELD_ID || 
+            f.name === PASSWORD_FIELD_ID || 
+            f.fieldKey === `contact.${PASSWORD_FIELD_ID}` ||
+            f.name.toLowerCase().includes('hlgrowthpar') || // Handle typos
+            f.fieldKey.toLowerCase().includes('hlgrowthpar')
+        );
+
+        if (field) {
+            console.log(`[GHL] SUCCESS: Resolved "${PASSWORD_FIELD_ID}" to ID: ${field.id} (Key: ${field.fieldKey})`);
+            PASSWORD_FIELD_ID = field.id; // Store the actual ID
+            return field.id;
+        } else {
+            console.warn(`[GHL] WARNING: Could not find custom field matching "${PASSWORD_FIELD_ID}". Using default value.`);
+            return PASSWORD_FIELD_ID;
+        }
+    } catch (error) {
+        console.error('[GHL RESOLVE ERROR]:', error.message);
+        return PASSWORD_FIELD_ID;
+    }
+}
+
+// Resolve on startup
+resolveFieldId();
 
 // Login Endpoint
+// Login Route - Supports /api/login and /hlgp/api/login
 app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
     const { email, password } = req.body;
 
@@ -52,10 +131,17 @@ app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
         }
 
         const customFields = user.customFields || [];
-        const passwordField = customFields.find(f => f.id === PASSWORD_FIELD_ID || f.key === PASSWORD_FIELD_ID);
+        // Look for the password in custom fields using ID, Key, or any field that looks like our password field
+        const passwordField = customFields.find(f => 
+            f.id === PASSWORD_FIELD_ID || 
+            (f.key && f.key.includes('hlgrowthpar')) ||
+            (f.id && f.id.includes('hlgrowthpar'))
+        );
+        
         const hashedPassword = passwordField ? passwordField.value : null;
 
         if (!hashedPassword) {
+            console.warn(`[LOGIN] User ${email} found but password field is empty in GHL.`);
             return res.status(401).json({ 
                 success: false, 
                 message: 'Account found but no password set. Please use the Registration form to set your password.',
@@ -93,6 +179,7 @@ app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
 });
 
 // Signup Endpoint
+// Signup Route - Supports /api/signup and /hlgp/api/signup
 app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
     const { name, email, company, password } = req.body;
 
@@ -133,6 +220,9 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
             // Case: User exists but has no password -> UPDATE existing contact
             console.log(`[SIGNUP] Updating existing contact: ${existingUser.id}`);
             
+            // Resolve field ID again just in case it wasn't resolved on startup
+            const actualFieldId = await resolveFieldId();
+
             // Add the audit tag to the existing user
             const existingTags = existingUser.tags || [];
             const newTags = [...new Set([...existingTags, 'audit user'])];
@@ -141,7 +231,7 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
                 tags: newTags,
                 customFields: [
                     {
-                        id: PASSWORD_FIELD_ID,
+                        id: actualFieldId,
                         value: hashedPassword
                     }
                 ]
@@ -175,6 +265,7 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
         // Case: User does not exist -> CREATE new contact
         const [firstName, ...lastNameParts] = name.split(' ');
         const lastName = lastNameParts.join(' ');
+        const actualFieldId = await resolveFieldId();
 
         const createResponse = await axios.post(`https://services.leadconnectorhq.com/contacts/`, {
             locationId: GHL_LOCATION_ID,
@@ -185,7 +276,7 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
             tags: ['audit user'],
             customFields: [
                 {
-                    id: PASSWORD_FIELD_ID,
+                    id: actualFieldId,
                     value: hashedPassword
                 }
             ]
@@ -224,6 +315,7 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
 });
 
 // Forgot Password / Contact Admin Endpoint
+// Forgot Password Route - Supports /api/forgot-password and /hlgp/api/forgot-password
 app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res) => {
     const { email } = req.body;
     
@@ -264,6 +356,39 @@ app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res)
     }
 });
 
-app.listen(PORT, () => {
+// Serve frontend pages for cleaner URLs
+// Using regex to handle various prefixes
+app.get(['/', '/hlgp', '/audit', '/v2'], (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/auth.html'));
+});
+
+// Use regex to capture any path ending in /auth, /auth.html, or /login-page
+app.get(/.*\/(auth|login-page)(\.html)?$/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/auth.html'));
+});
+
+// Use regex to capture any path ending in /audit or /audit.html
+app.get(/.*\/audit(\.html)?$/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/audit.html'));
+});
+
+const server = app.listen(PORT, () => {
     console.log(`🚀 Audit Portal Backend running on port ${PORT}`);
+});
+
+// Graceful shutdown handlers to prevent "Can't acquire lock" / zombie process issues
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+    });
 });

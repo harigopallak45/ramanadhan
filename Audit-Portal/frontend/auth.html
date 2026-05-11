@@ -30,17 +30,7 @@
             overflow: hidden;
         }
 
-        /* Grain overlay for premium feel */
-        .grain::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.88 0 0 0 0 0.82 0 0 0 0.08 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
-            opacity: 0.15;
-            pointer-events: none;
-            mix-blend-mode: overlay;
-        }
+        /* Grain overlay removed to resolve browser warnings */
 
         .auth-card {
             position: relative;
@@ -218,7 +208,7 @@
                 <input type="password" id="loginPassword" placeholder="••••••••" required>
             </div>
             <div style="text-align: right; margin-top: -20px; margin-bottom: 24px;">
-                <a id="forgotBtn" style="font-size: 11px; color: #666; cursor: pointer; font-family: 'JetBrains Mono', monospace; text-transform: uppercase;">Forgot Password?</a>
+                <a id="forgotBtn" href="javascript:void(0)" style="font-size: 11px; color: #666; cursor: pointer; font-family: 'JetBrains Mono', monospace; text-transform: uppercase;">Forgot Password?</a>
             </div>
             <button type="submit" class="btn-submit">Initialize Session</button>
         </form>
@@ -256,13 +246,17 @@
 
         <div class="toggle-section">
             <span id="toggleText">Unauthorized entity?</span>
-            <a id="toggleBtn">Apply for Access</a>
+            <a id="toggleBtn" href="javascript:void(0)">Apply for Access</a>
         </div>
     </div>
 
     <script>
         // Backend Configuration (Requires SSL for HTTPS frontend)
+        // Backend Configuration - Cross-Origin setup
         const BASE_URL = 'https://amlcompliance.com.au/hlgp'; 
+        
+        console.log('[DEBUG] Pathname:', window.location.pathname);
+        console.log('[DEBUG] BASE_URL being used:', BASE_URL);
 
         const loginForm = document.getElementById('loginForm');
         const signupForm = document.getElementById('signupForm');
@@ -321,7 +315,10 @@
             statusMsg.className = 'status-msg';
             
             try {
-                const res = await fetch(`${BASE_URL}${endpoint}`, {
+                const apiURL = `${BASE_URL}${endpoint}`;
+                console.log(`[DEBUG] Fetching: ${apiURL}`);
+                
+                const res = await fetch(apiURL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -341,7 +338,7 @@
                     localStorage.setItem('user_email', body.email);
                     
                     setTimeout(() => {
-                        window.location.href = 'audit.html';
+                        window.location.href = 'audit';
                     }, 1000);
                 } else {
                     statusMsg.innerText = data.message || 'Action Failed';
@@ -382,7 +379,7 @@
 
         window.onload = () => {
             if (localStorage.getItem('jwt_token')) {
-                window.location.href = 'audit.html';
+                window.location.href = 'audit';
             }
         };
     </script>
