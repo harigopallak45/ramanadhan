@@ -246,11 +246,11 @@ app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res)
         if (!contact) return res.status(404).json({ success: false, message: 'User not found.' });
 
         // Generate reset token (1 hour expiry)
-        const token = jwt.sign({ id: contact.id, email: contact.email }, JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ id: contact.id, email: contact.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
         
         // Construct Reset URL
-        const domain = process.env.BACKEND_URL ? new URL(process.env.BACKEND_URL).origin : 'https://austrac.amlcompliance.com.au';
-        const resetUrl = `${domain}/audit/reset?token=${token}`;
+        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const resetUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         // Trigger GHL: Update custom field and add tag to trigger automation
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contact.id}`, {
@@ -264,6 +264,33 @@ app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res)
     } catch (error) {
         console.error('[FORGOT ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Error triggering reset' });
+    }
+});
+
+// Verify Token and Fetch Contact Info
+app.get(['/api/verify-token', '/hlgp/api/verify-token'], async (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
+        // Fetch contact details from GoHighLevel
+        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/${decoded.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        const contact = response.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
+
+        res.json({
+            success: true,
+            name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Client',
+            email: contact.email || '',
+            type: decoded.type || 'reset'
+        });
+    } catch (error) {
+        console.error('[VERIFY TOKEN ERROR]:', error.message);
+        res.status(400).json({ success: false, message: 'Invalid or expired token.' });
     }
 });
 
@@ -433,9 +460,9 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
         const contact = response.data.contact;
         if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
 
-        const token = jwt.sign({ id: contact.id, email: contact.email }, JWT_SECRET, { expiresIn: '1h' });
-        const domain = process.env.BACKEND_URL ? new URL(process.env.BACKEND_URL).origin : 'https://austrac.amlcompliance.com.au';
-        const resetUrl = `${domain}/audit/reset?token=${token}`;
+        const token = jwt.sign({ id: contact.id, email: contact.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
+        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const resetUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         const customFieldsToUpdate = [
             { id: RESET_URL_FIELD_ID, value: resetUrl }
@@ -459,7 +486,68 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
-        res.json({ success: true, message: 'Reset email triggered via GHL' });
+        // Direct Email sending via GHL Conversations API
+        let apiEmailSent = false;
+        if (contact.email) {
+            try {
+                await axios.post(`https://services.leadconnectorhq.com/conversations/messages`, {
+                    type: 'Email',
+                    contactId: contactId,
+                    emailSubject: 'Password Reset: AML Compliance Review Portal',
+                    html: `
+                        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #1e293b;">
+                            <div style="margin-bottom: 24px; text-align: center;">
+                                <div style="display: inline-block; font-size: 32px; margin-bottom: 8px;">🔑</div>
+                                <h2 style="margin: 0; font-family: Georgia, serif; font-size: 24px; color: #0f172a; font-weight: 600;">Reset Your Password</h2>
+                            </div>
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                Hello ${contact.firstName || 'Client'},
+                            </p>
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                An administrator has initiated a password reset request for your AML Compliance Portal account.
+                            </p>
+                            ${message ? `
+                            <div style="margin: 24px 0; padding: 20px; background: #f8fafc; border-left: 4px solid #d4b256; border-radius: 4px; font-style: italic; font-size: 15px; line-height: 1.6; color: #0f172a; font-family: monospace;">
+                                ${message.replace(/\n/g, '<br>')}
+                            </div>
+                            ` : ''}
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                Please click the secure button below to set a new password. This link is valid for **1 hour**:
+                            </p>
+                            <div style="text-align: center; margin: 32px 0 24px 0;">
+                                <a href="${resetUrl}" target="_blank" style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); transition: background-color 0.2s;">
+                                    Reset Password
+                                </a>
+                            </div>
+                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
+                                If the button above does not work, copy and paste the following URL into your browser:
+                                <br/>
+                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${resetUrl}</span>
+                            </p>
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
+                            <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
+                                Sent automatically by the AML Compliance Review Board.<br/>
+                                Please do not reply directly to this message.
+                            </p>
+                        </div>
+                    `
+                }, {
+                    headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+                });
+                apiEmailSent = true;
+                console.log(`[GHL] Direct password reset email successfully sent to ${contact.email} via Conversations API`);
+            } catch (err) {
+                console.warn('[GHL] Conversations API direct password reset email failed (falling back to standard custom field workflow trigger):', err.response?.data || err.message);
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: apiEmailSent 
+                ? 'Reset email delivered successfully via GHL Conversations API!' 
+                : 'Reset email triggered via GHL. GHL contact card updated.' 
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -577,8 +665,7 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
                                 Please do not reply directly to this message.
                             </p>
                         </div>
-                    `,
-                    status: 'sent'
+                    `
                 }, {
                     headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
                 });
@@ -629,9 +716,9 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
         }
 
         // 3. Generate Invite/Reset Link
-        const token = jwt.sign({ id: contactId, email: email }, JWT_SECRET, { expiresIn: '7d' }); // 7 days for invites
-        const domain = process.env.BACKEND_URL ? new URL(process.env.BACKEND_URL).origin : 'https://austrac.amlcompliance.com.au';
-        const inviteUrl = `${domain}/audit/reset?token=${token}`;
+        const token = jwt.sign({ id: contactId, email: email, type: 'invite' }, JWT_SECRET, { expiresIn: '7d' }); // 7 days for invites
+        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const inviteUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         // 4. Fetch full contact to get existing tags to avoid overwriting
         const getRes = await axios.get(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
@@ -676,7 +763,63 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
             }
         }
 
-        res.json({ success: true, message: 'Invite created and sent to GHL successfully.' });
+        // Direct Email sending via GHL Conversations API
+        let apiEmailSent = false;
+        if (email) {
+            try {
+                await axios.post(`https://services.leadconnectorhq.com/conversations/messages`, {
+                    type: 'Email',
+                    contactId: contactId,
+                    emailSubject: 'Invitation to AML Compliance Review Portal',
+                    html: `
+                        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #1e293b;">
+                            <div style="margin-bottom: 24px; text-align: center;">
+                                <div style="display: inline-block; font-size: 32px; margin-bottom: 8px;">🔐</div>
+                                <h2 style="margin: 0; font-family: Georgia, serif; font-size: 24px; color: #0f172a; font-weight: 600;">Welcome to your AML Compliance Portal</h2>
+                            </div>
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                Hello ${firstName || 'Client'},
+                            </p>
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                An account has been created for you on the **AML Compliance Review Portal** to manage your compliance assessment.
+                            </p>
+                            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                                Please click the secure button below to set up your password and begin your review:
+                            </p>
+                            <div style="text-align: center; margin: 32px 0 24px 0;">
+                                <a href="${inviteUrl}" target="_blank" style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); transition: background-color 0.2s;">
+                                    Set Up Your Account
+                                </a>
+                            </div>
+                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
+                                If the button above does not work, copy and paste the following URL into your browser:
+                                <br/>
+                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${inviteUrl}</span>
+                            </p>
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
+                            <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
+                                Sent automatically by the AML Compliance Review Board.<br/>
+                                Please do not reply directly to this message.
+                            </p>
+                        </div>
+                    `
+                }, {
+                    headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+                });
+                apiEmailSent = true;
+                console.log(`[GHL] Direct invite email successfully sent to ${email} via Conversations API`);
+            } catch (err) {
+                console.warn('[GHL] Conversations API direct invite email failed (falling back to standard custom field workflow trigger):', err.response?.data || err.message);
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: apiEmailSent 
+                ? 'Invite created and email delivered successfully via GHL Conversations API!' 
+                : 'Invite created. GHL contact card updated.' 
+        });
     } catch (error) {
         console.error('[INVITE ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: error.message });
