@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Invitation to the Audit Portal</title>
+    <style>
+        /* Email client resets and basic responsive styles */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        table { border-collapse: collapse !important; }
+        body { height: 100% !important; margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f7fa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+        
+        /* Main wrapper */
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-top: 40px;
+            margin-bottom: 40px;
+        }
+
+        .header {
+            background-color: #1a1a1a;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .content {
+            padding: 40px 30px;
+            color: #333333;
+            line-height: 1.6;
+        }
+
+        .content h2 {
+            color: #1a1a1a;
+            font-size: 20px;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .content p {
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .button-container {
+            text-align: center;
+            margin: 35px 0;
+        }
+
+        .btn {
+            background-color: #0066ff;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 16px;
+            display: inline-block;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0052cc;
+        }
+
+        .warning-text {
+            font-size: 14px;
+            color: #666666;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #ffb020;
+            margin-bottom: 20px;
+        }
+
+        .footer {
+            background-color: #f4f7fa;
+            padding: 20px;
+            text-align: center;
+            color: #888888;
+            font-size: 12px;
+            border-top: 1px solid #eaeaec;
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f7fa;">
+
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+    <tr>
+        <td align="center" style="padding: 20px 0;">
+            <table class="email-container" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                
+                <!-- Header -->
+                <tr>
+                    <td class="header">
+                        <h1>AUDIT PORTAL</h1>
+                    </td>
+                </tr>
+
+                <!-- Body Content -->
+                <tr>
+                    <td class="content">
+                        <h2>Hello {{contact.first_name}},</h2>
+                        
+                        <p>You have been invited by your administrator to access the <strong>Audit Portal</strong>. Inside, you'll be able to review your detailed analytics, manage your profile, and track your progress.</p>
+                        
+                        <p>To get started and access your dashboard, please click the secure link below to set up your account and log in.</p>
+                        
+                        <!-- CTA Button using GHL custom field -->
+                        <div class="button-container">
+                            <a href="{{contact.admin_portal_invite_link}}" class="btn">Access Audit Portal</a>
+                        </div>
+                        
+                        <div class="warning-text">
+                            <strong>Note:</strong> For security purposes, this invitation link is unique to you and will expire in <strong>7 days</strong>. Please do not share this link with anyone.
+                        </div>
+                        
+                        <p>If you have any questions or need assistance, simply reply to this email.</p>
+                        
+                        <p style="margin-bottom: 0;">Best regards,<br><strong>The Audit Portal Team</strong></p>
+                    </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                    <td class="footer">
+                        &copy; {{ right_now.year }} Audit Portal. All rights reserved.<br>
+                        If you did not expect this invitation, you can safely ignore this email.
+                    </td>
+                </tr>
+
+            </table>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

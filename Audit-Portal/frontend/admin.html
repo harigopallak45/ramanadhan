@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centinl — Admin Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --surface-hover: #1c1c1c;
+            --border: rgba(255, 255, 255, 0.1);
+            --text-main: #ffffff;
+            --text-dim: #999999;
+            --accent: #d4b256;
+            --success: #10b981;
+            --pending: #f59e0b;
+            --font-serif: 'Fraunces', serif;
+            --font-sans: 'Inter Tight', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        /* Bulk Action Bar */
+        #bulk-action-bar {
+            position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: var(--text-main); color: var(--bg);
+            padding: 12px 24px; border-radius: 100px;
+            display: flex; align-items: center; gap: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 500;
+        }
+        #bulk-action-bar.active { transform: translateX(-50%) translateY(0); }
+
+        .bulk-btn {
+            background: none; border: none; color: inherit;
+            font-weight: 600; font-size: 13px; cursor: pointer;
+            padding: 8px 12px; border-radius: 50px;
+            transition: background 0.2s;
+        }
+        .bulk-btn:hover { background: rgba(0,0,0,0.1); }
+
+        /* Analytics Section */
+        .analytics-container {
+            display: grid; grid-template-columns: 2fr 1fr; gap: 24px;
+            margin-bottom: 48px;
+        }
+        .chart-card {
+            background: var(--surface); border: 1px solid var(--border);
+            padding: 24px; border-radius: 12px; height: 300px;
+        }
+
+        /* Checkbox styling */
+        .custom-cb { cursor: pointer; width: 18px; height: 18px; accent-color: var(--accent); }
+
+        /* Vault Section in Modal */
+        .vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        .vault-item { 
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            padding: 12px; border-radius: 8px; text-decoration: none; color: inherit;
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+        }
+        .vault-item:hover { background: rgba(255,255,255,0.08); }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        header {
+            padding: 24px 40px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(20px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .brand img {
+            height: 28px;
+            filter: brightness(1.2);
+        }
+
+        .brand-text {
+            font-family: var(--font-serif);
+            font-size: 20px;
+            font-weight: 500;
+            letter-spacing: -0.5px;
+        }
+
+        .admin-badge {
+            background: rgba(212, 178, 86, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(212, 178, 86, 0.2);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 48px auto;
+            padding: 0 40px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 32px;
+            border-radius: 12px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .stat-label {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        .stat-value {
+            font-family: var(--font-serif);
+            font-size: 36px;
+            font-weight: 500;
+        }
+
+        .table-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table-header h2 {
+            font-family: var(--font-serif);
+            font-size: 22px;
+            font-weight: 500;
+        }
+
+        .search-box {
+            position: relative;
+            width: 300px;
+        }
+
+        .search-box input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            padding: 10px 16px;
+            padding-left: 36px;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-box input:focus {
+            border-color: var(--accent);
+        }
+
+        .search-box svg {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: var(--text-dim);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 16px 32px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 20px 32px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+
+        tr:hover td {
+            background: var(--surface-hover);
+        }
+
+        .status-pill {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .status-completed { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .status-pending, .status-in-progress { background: rgba(245, 158, 11, 0.1); color: var(--pending); }
+        .status-admin { background: rgba(212, 178, 86, 0.1); color: var(--gold); }
+
+        .btn-view {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-view:hover {
+            background: var(--border);
+        }
+
+        #loading-state {
+            padding: 80px;
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-in {
+            animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header { padding: 16px 20px; }
+            main { padding: 0 20px; margin: 24px 0; }
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .table-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+            .search-box { width: 100%; }
+            th:nth-child(3), td:nth-child(3) { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <img src="https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png" alt="Centinl Logo">
+            <div class="portal-divider" style="width: 1px; height: 20px; background: var(--border);"></div>
+            <select id="location-switcher" style="background: none; border: none; color: white; font-family: var(--font-serif); font-size: 20px; cursor: pointer; outline: none;">
+                <option value="default" selected>Primary Location</option>
+                <option value="secondary">Staging Branch</option>
+            </select>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div class="admin-badge">SYSTEM OVERSEER</div>
+            <button onclick="logout()" style="background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 4px 12px; border-radius: 4px; font-size: 11px; font-family: var(--font-mono); cursor: pointer;">LOGOUT</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Analytics Section -->
+        <div class="analytics-container animate-in">
+            <div class="chart-card">
+                <div class="stat-label">Audit Completion Trend</div>
+                <canvas id="trendChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <div class="stat-label">Risk Distribution</div>
+                <canvas id="riskChart"></canvas>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="stat-card animate-in" style="animation-delay: 0.1s;">
+                <div class="stat-label">Total Entities</div>
+                <div class="stat-value" id="stat-total">—</div>
+            </div>
+            <div class="stat-card animate-in" style="animation-delay: 0.2s;">
+                <div class="stat-label">Completed Submissions</div>
+                <div class="stat-value" id="stat-completed">—</div>
+            </div>
+            <div class="stat-card animate-in" style="animation-delay: 0.3s;">
+                <div class="stat-label">Active Audits</div>
+                <div class="stat-value" id="stat-active">—</div>
+            </div>
+        </div>
+
+        <div class="table-container animate-in" style="animation-delay: 0.4s;">
+            <div class="table-header">
+                <h2>User Directory</h2>
+                <div style="display:flex; gap: 16px; align-items: center;">
+                <select id="user-filter" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); padding: 10px 16px; border-radius: 6px; color: white; font-family: var(--font-sans); font-size: 14px; outline: none; cursor: pointer;">
+                    <option value="all">All Statuses</option>
+                    <option value="completed">Completed</option>
+                    <option value="in progress">In Progress</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <div class="search-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    <input type="text" id="user-search" placeholder="Search entities...">
+                </div>
+                <button class="btn-primary" onclick="openInviteModal()" style="padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-family: var(--font-sans); font-weight: 500;">+ Invite Client</button>
+            </div>
+        </div>
+            
+            <div id="loading-state">
+                <div style="margin-bottom: 16px;">Fetching system data...</div>
+                <div style="font-family: var(--font-mono); font-size: 10px; color: var(--accent);">INITIALIZING HANDSHAKE</div>
+            </div>
+
+            <table id="users-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Representative</th>
+                        <th>Entity / Company</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <!-- Dynamic Rows -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <div id="bulk-action-bar">
+        <div style="font-family: var(--font-mono); font-size: 11px; opacity: 0.6;"><span id="selected-count">0</span> SELECTED</div>
+        <div style="width: 1px; height: 20px; background: rgba(0,0,0,0.1);"></div>
+        <button onclick="handleBulkNudge()" class="bulk-btn">Nudge All</button>
+        <button onclick="handleBulkTag()" class="bulk-btn">Apply Tag</button>
+        <div style="width: 1px; height: 20px; background: rgba(0,0,0,0.1);"></div>
+        <button onclick="clearSelection()" style="font-size: 11px; opacity: 0.5; background: none; border: none; cursor: pointer;">DESELECT</button>
+    </div>
+
+    <!-- Invite Modal -->
+    <div id="invite-modal" style="display: none; position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 440px; border-radius: 12px; padding: 32px; display: flex; flex-direction: column; gap: 16px;">
+            <h2 style="font-family: var(--font-serif); font-size: 24px; margin-bottom: 8px;">Invite New Client</h2>
+            
+            <input type="text" id="inv-first" placeholder="First Name" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-family: var(--font-sans); outline: none;">
+            <input type="text" id="inv-last" placeholder="Last Name (Optional)" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-family: var(--font-sans); outline: none;">
+            <input type="email" id="inv-email" placeholder="Email Address" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-family: var(--font-sans); outline: none;">
+            <input type="text" id="inv-company" placeholder="Company Name (Optional)" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-family: var(--font-sans); outline: none;">
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+                <button onclick="document.getElementById('invite-modal').style.display='none'" style="background: none; border: 1px solid var(--border); color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Cancel</button>
+                <button id="btn-send-invite" onclick="sendInvite()" style="background: white; color: black; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500;">Send Invite</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let BASE_URL = window.location.hostname.includes('localhost') ? 'http://localhost:5001' : 'https://amlcompliance.com.au/hlgp';
+        let allUsers = [];
+        let ghlLocationId = '';
+
+        function initApp() {
+            const token = localStorage.getItem('jwt_token');
+            const isAdmin = localStorage.getItem('is_admin') === 'true';
+            
+            if (!token || !isAdmin) {
+                window.location.href = '/audit/login-page';
+                return;
+            }
+
+            fetchUsers();
+        }
+
+        function logout() {
+            localStorage.removeItem('jwt_token');
+            localStorage.removeItem('is_admin');
+            localStorage.removeItem('user_email');
+            window.location.href = '/audit/login-page';
+        }
+
+        async function fetchUsers() {
+            const loading = document.getElementById('loading-state');
+            const table = document.getElementById('users-table');
+            const token = localStorage.getItem('jwt_token');
+            
+            try {
+                const response = await fetch(`${BASE_URL}/api/admin/users`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.status === 401 || response.status === 403) {
+                    logout();
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    allUsers = data.users;
+                    ghlLocationId = data.locationId;
+                    renderUsers(allUsers);
+                    updateStats(allUsers);
+                    initCharts(allUsers);
+                    
+                    loading.style.display = 'none';
+                    table.style.display = 'table';
+                }
+            } catch (err) {
+                loading.innerText = 'System Error: Failed to connect to secure vault.';
+            }
+        }
+
+        function initCharts(users) {
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            const ctxRisk = document.getElementById('riskChart').getContext('2d');
+
+            // Trend Chart
+            new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    datasets: [{
+                        label: 'Audit Submissions',
+                        data: [12, 19, 3, 5, 2, 3],
+                        borderColor: '#d4b256',
+                        tension: 0.4
+                    }]
+                },
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            // Risk Chart
+            new Chart(ctxRisk, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Completed', 'Pending', 'Flagged'],
+                    datasets: [{
+                        data: [
+                            users.filter(u => u.status === 'completed').length,
+                            users.filter(u => u.status === 'pending').length,
+                            2
+                        ],
+                        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { maintainAspectRatio: false }
+            });
+        }
+
+        function updateStats(users) {
+            document.getElementById('stat-total').innerText = users.length;
+            document.getElementById('stat-completed').innerText = users.filter(u => u.status === 'completed').length;
+            document.getElementById('stat-active').innerText = users.filter(u => u.status === 'pending').length;
+        }
+
+        function renderUsers(users) {
+            const tbody = document.getElementById('users-tbody');
+            tbody.innerHTML = users.map(user => `
+                <tr id="row-${user.id}">
+                    <td><input type="checkbox" class="custom-cb user-checkbox" value="${user.id}" onchange="updateSelection()"></td>
+                    <td>
+                        <div style="font-weight: 500;">
+                            ${user.name}
+                            ${user.role === 'admin' ? '<span style="margin-left: 6px; padding: 2px 6px; background: rgba(212, 178, 86, 0.2); color: #d4b256; font-size: 9px; border-radius: 4px; border: 1px solid rgba(212, 178, 86, 0.3); font-family: var(--font-mono); text-transform: uppercase;">Admin</span>' : ''}
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-dim);">${user.email}</div>
+                    </td>
+                    <td>${user.company || '—'}</td>
+                    <td><span class="status-pill status-${user.status.replace(' ', '-').toLowerCase()}">${user.status}</span></td>
+                    <td><button class="btn-view" onclick="window.location.href='/audit/entity?id=${user.id}'">View Details</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function updateSelection() {
+            const checked = document.querySelectorAll('.user-checkbox:checked');
+            const bar = document.getElementById('bulk-action-bar');
+            const count = document.getElementById('selected-count');
+            
+            count.innerText = checked.length;
+            if (checked.length > 0) bar.classList.add('active');
+            else bar.classList.remove('active');
+        }
+
+        function clearSelection() {
+            document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
+            updateSelection();
+        }
+
+        async function handleBulkNudge() {
+            const ids = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
+            const token = localStorage.getItem('jwt_token');
+            if (!confirm(`Trigger reminders for ${ids.length} users?`)) return;
+
+            try {
+                const res = await fetch(`${BASE_URL}/api/admin/bulk-nudge`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contactIds: ids })
+                });
+                const d = await res.json();
+                alert(d.message);
+                clearSelection();
+            } catch (err) { alert(err.message); }
+        }
+
+        async function handleBulkTag() {
+            const tag = prompt('Enter tag to apply:');
+            if (!tag) return;
+            const ids = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
+            const token = localStorage.getItem('jwt_token');
+
+            try {
+                const res = await fetch(`${BASE_URL}/api/admin/bulk-tag`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contactIds: ids, tag: tag })
+                });
+                const d = await res.json();
+                alert(d.message);
+                clearSelection();
+            } catch (err) { alert(err.message); }
+        }
+
+
+
+        function filterUsers() {
+            const q = document.getElementById('user-search').value.toLowerCase();
+            const statusFilter = document.getElementById('user-filter').value.toLowerCase();
+            
+            const filtered = allUsers.filter(u => {
+                const matchesSearch = u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.company && u.company.toLowerCase().includes(q));
+                const matchesStatus = statusFilter === 'all' || u.status.toLowerCase() === statusFilter;
+                return matchesSearch && matchesStatus;
+            });
+            renderUsers(filtered);
+        }
+
+        document.getElementById('user-search').addEventListener('input', filterUsers);
+        document.getElementById('user-filter').addEventListener('change', filterUsers);
+
+        initApp();
+        function openInviteModal() {
+            document.getElementById('invite-modal').style.display = 'flex';
+        }
+
+        async function sendInvite() {
+            const firstName = document.getElementById('inv-first').value;
+            const lastName = document.getElementById('inv-last').value;
+            const email = document.getElementById('inv-email').value;
+            const company = document.getElementById('inv-company').value;
+            const token = localStorage.getItem('jwt_token');
+
+            if (!firstName || !email) return alert('First Name and Email are required.');
+
+            document.getElementById('btn-send-invite').innerText = 'Sending...';
+            try {
+                const res = await fetch(`${BASE_URL}/api/admin/invite`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ firstName, lastName, email, company })
+                });
+                const data = await res.json();
+                alert(data.message);
+                if (data.success) {
+                    document.getElementById('invite-modal').style.display = 'none';
+                    document.getElementById('inv-first').value = '';
+                    document.getElementById('inv-last').value = '';
+                    document.getElementById('inv-email').value = '';
+                    document.getElementById('inv-company').value = '';
+                    fetchUsers(); // Refresh list
+                }
+            } catch (err) {
+                alert('Request failed: ' + err.message);
+            }
+            document.getElementById('btn-send-invite').innerText = 'Send Invite';
+        }
+
+    </script>
+</body>
+</html>

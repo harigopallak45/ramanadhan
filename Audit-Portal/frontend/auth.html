@@ -251,12 +251,7 @@
     </div>
 
     <script>
-        // Backend Configuration (Requires SSL for HTTPS frontend)
-        // Backend Configuration - Cross-Origin setup
-        const BASE_URL = 'https://amlcompliance.com.au/hlgp'; 
-        
-        console.log('[DEBUG] Pathname:', window.location.pathname);
-        console.log('[DEBUG] BASE_URL being used:', BASE_URL);
+        let BASE_URL = window.location.hostname.includes('localhost') ? 'http://localhost:5001' : 'https://amlcompliance.com.au/hlgp';
 
         const loginForm = document.getElementById('loginForm');
         const signupForm = document.getElementById('signupForm');
@@ -333,12 +328,21 @@
                     }
 
                     statusMsg.innerText = 'Access Granted. Redirecting...';
-                    statusMsg.className = 'status-msg success';
+                    console.log('[AUTH DEBUG]: Server Response ->', data);
                     localStorage.setItem('jwt_token', data.token);
                     localStorage.setItem('user_email', body.email);
+                    if (data.isAdmin) {
+                        console.log('[AUTH DEBUG]: Setting is_admin to true');
+                        localStorage.setItem('is_admin', 'true');
+                    } else {
+                        console.warn('[AUTH DEBUG]: Server says NOT an admin. Removing is_admin.');
+                        localStorage.removeItem('is_admin');
+                    }
                     
                     setTimeout(() => {
-                        window.location.href = 'audit';
+                        const target = data.isAdmin ? '/audit/admin' : '/audit/audit';
+                        console.log('[AUTH DEBUG]: Redirecting to ->', target);
+                        window.location.href = target;
                     }, 1000);
                 } else {
                     statusMsg.innerText = data.message || 'Action Failed';
@@ -378,8 +382,10 @@
         });
 
         window.onload = () => {
-            if (localStorage.getItem('jwt_token')) {
-                window.location.href = 'audit';
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                const isAdmin = localStorage.getItem('is_admin') === 'true';
+                window.location.href = isAdmin ? '/audit/admin' : '/audit/audit';
             }
         };
     </script>
