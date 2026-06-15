@@ -1,0 +1,14 @@
+{
+  "_comment": "Authoritative AUSTRAC AML/CTF reference sources. Run `npm run rag:fetch` to download these into knowledge/ and rebuild the grounding index. Add/remove URLs freely. NOTE: austrac.gov.au is reachable from Australia but may time out / be blocked from overseas networks — run the fetch from your own machine. You can also just drop your own AUSTRAC PDFs straight into knowledge/ and run `npm run rag:ingest`.",
+  "sources": [
+    { "slug": "amlctf-act-2006",            "label": "AML/CTF Act 2006 — full compilation (PDF)",   "url": "https://www.austrac.gov.au/sites/default/files/2024-12/Future%20Law%20Compilation%20of%20the%20Anti-Money%20Laundering%20and%20Counter-Terrorism%20Financing%20Act%202006.pdf" },
+    { "slug": "guid-amlctf-programs",       "label": "AUSTRAC — AML/CTF program resources",         "url": "https://www.austrac.gov.au/business/how-comply-and-report-guidance-and-resources/guidance-resources/aml-ctf-programs" },
+    { "slug": "guid-transaction-monitoring","label": "AUSTRAC — Transaction monitoring",            "url": "https://www.austrac.gov.au/business/core-guidance/amlctf-programs/transaction-monitoring" },
+    { "slug": "guid-suspicious-matter",     "label": "AUSTRAC — Suspicious matter reports",         "url": "https://www.austrac.gov.au/industry-and-business/obligations-and-guidance/your-amlctf-program/reporting-us/suspicious-matter-reports" },
+    { "slug": "guid-customer-id",           "label": "AUSTRAC — Customer identification & verification", "url": "https://www.austrac.gov.au/business/core-guidance/customer-identification-and-verification" },
+    { "slug": "guid-ecdd",                  "label": "AUSTRAC — Enhanced customer due diligence",   "url": "https://www.austrac.gov.au/industry-and-business/obligations-and-guidance/your-amlctf-program/customer-due-diligence/enhanced-customer-due-diligence" },
+    { "slug": "guid-cdd-overview",          "label": "AUSTRAC — Customer due diligence overview",   "url": "https://www.austrac.gov.au/industry-and-business/obligations-and-guidance/your-amlctf-program/customer-due-diligence/overview-customer-due-diligence" },
+    { "slug": "guid-your-obligations",      "label": "AUSTRAC — Your obligations",                  "url": "https://www.austrac.gov.au/industry-and-business/obligations-and-guidance/your-obligations" },
+    { "slug": "guid-risk-assessment",       "label": "AUSTRAC — Identify and assess your risks",    "url": "https://www.austrac.gov.au/industry-and-business/obligations-and-guidance/your-amlctf-program/develop-your-amlctf-programs/step-2-identify-and-assess-your-risks" }
+  ]
+}

@@ -419,7 +419,8 @@
     </div>
 
     <script>
-        let BASE_URL = window.location.hostname.includes('localhost') ? 'http://localhost:5001' : 'https://amlcompliance.com.au/hlgp';
+        const _isLocalHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(window.location.hostname);
+        let BASE_URL = _isLocalHost ? 'http://localhost:5001' : 'https://amlcompliance.com.au/hlgp';
         const urlParams = new URLSearchParams(window.location.search);
         const entityId = urlParams.get('id');
         const token = localStorage.getItem('jwt_token');
@@ -741,6 +742,7 @@
 
         function renderEntity(contact) {
             const fields = contact.customFields || [];
+            window._entityName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim() + (contact.companyName ? ` (${contact.companyName})` : '');
             
             const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
             const isAdmin = tags.includes('audit admin') || tags.includes('audit-admin');
@@ -1018,6 +1020,9 @@
                     <div style="text-align: right;">
                         <p style="font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 16px;">GHL ID: ${contact.id}</p>
                         <div class="action-row" style="justify-content: flex-end;">
+                            <button class="btn" id="ai-score-btn" style="border-color: var(--accent); color: var(--accent); font-weight: 600;" onclick="runAiScore()">✦ AI Compliance Score</button>
+                            <button class="btn" id="ai-upload-btn" style="border-color: var(--accent); color: var(--accent);" onclick="document.getElementById('ai-upload-input').click()">⬆ Upload &amp; Analyze</button>
+                            <input type="file" id="ai-upload-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" style="display:none" onchange="uploadAndAnalyze(this.files); this.value='';">
                             <button class="btn btn-primary" onclick="exportCSV()">Export to CSV</button>
                             ${isAdmin ? 
                                 `<button class="btn btn-danger" onclick="changeRole('demote_admin')">Revoke Admin Rights</button>` : 
@@ -1033,6 +1038,8 @@
                         </div>
                     </div>
                 </div>
+
+                <div id="ai-score-panel" style="display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 32px; overflow: hidden;"></div>
 
                 <div id="composer-overlay" style="display: none; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 32px;">
                     <div style="font-size: 11px; font-family: var(--font-mono); color: var(--accent); margin-bottom: 12px; text-transform: uppercase;">Compose Client Message</div>
@@ -1269,6 +1276,221 @@
                 }
             });
         });
+
+        // =====================================================================
+        // AI COMPLIANCE SCORE (rag-audit module)
+        // =====================================================================
+        let _lastAiResult = null;
+
+        const AI_TONE = {
+            pass:     { color: '#10b981', label: '#10b981' },
+            watch:    { color: '#f59e0b', label: '#f59e0b' },
+            fail:     { color: '#f97316', label: '#f97316' },
+            critical: { color: '#ef4444', label: '#ef4444' }
+        };
+
+        function aiEsc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        async function runAiScore() {
+            const panel = document.getElementById('ai-score-panel');
+            const btn = document.getElementById('ai-score-btn');
+            if (!panel || !btn) return;
+            if (!entityId) { alert('No entity selected.'); return; }
+            if (btn.disabled) return; // guard against double-submit
+
+            btn.disabled = true;
+            const btnLabel = btn.textContent;
+            btn.textContent = '✦ Scoring…';
+
+            panel.style.display = 'block';
+            panel.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: var(--text-dim);">
+                    <div style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent);">Centinl AI Reviewer</div>
+                    <div style="margin-top: 14px; font-size: 15px; color: var(--text-main);">Assessing 23 review areas against the Chapter 6 framework…</div>
+                    <div style="margin-top: 8px; font-size: 12px;">Adequacy &amp; efficacy scoring · usually 5–15 seconds</div>
+                </div>`;
+
+            try {
+                const res = await fetch(`${BASE_URL}/api/rag-audit/score/${entityId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (res.status === 401 || res.status === 403) { window.location.href = '/audit/login-page'; return; }
+                let data;
+                try { data = await res.json(); }
+                catch { throw new Error(`Server returned ${res.status} (${res.statusText || 'no JSON'})`); }
+                if (!res.ok || !data.success) throw new Error(data.message || `Scoring failed (HTTP ${res.status})`);
+                _lastAiResult = data.result;
+                renderAiScore(data.result);
+            } catch (err) {
+                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">AI scoring failed: ${aiEsc(err.message)}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = btnLabel;
+            }
+        }
+
+        async function uploadAndAnalyze(fileList) {
+            const files = Array.from(fileList || []);
+            if (!files.length) return;
+            const panel = document.getElementById('ai-score-panel');
+            const ubtn = document.getElementById('ai-upload-btn');
+            if (!panel) return;
+            ubtn.disabled = true;
+            const ulabel = ubtn.textContent;
+            ubtn.textContent = '⬆ Analyzing…';
+
+            panel.style.display = 'block';
+            panel.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: var(--text-dim);">
+                    <div style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent);">Centinl AI Reviewer</div>
+                    <div style="margin-top: 14px; font-size: 15px; color: var(--text-main);">Reading ${files.length} document${files.length === 1 ? '' : 's'} and scoring…</div>
+                    <div style="margin-top: 8px; font-size: 12px;">Tip: name files like “Q06-transactions.pdf” so they map to the right area.</div>
+                </div>`;
+
+            const fd = new FormData();
+            files.forEach(f => fd.append('files', f));
+            fd.append('entityLabel', (window._entityName || 'Uploaded evidence'));
+            if (entityId) fd.append('contactId', entityId);
+
+            try {
+                const res = await fetch(`${BASE_URL}/api/rag-audit/analyze-upload`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }, // no Content-Type: browser sets multipart boundary
+                    body: fd
+                });
+                if (res.status === 401 || res.status === 403) { window.location.href = '/audit/login-page'; return; }
+                let data;
+                try { data = await res.json(); }
+                catch { throw new Error(`Server returned ${res.status} (${res.statusText || 'no JSON'})`); }
+                if (!res.ok || !data.success) throw new Error(data.message || `Analysis failed (HTTP ${res.status})`);
+                _lastAiResult = data.result;
+                renderAiScore(data.result);
+            } catch (err) {
+                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">Upload analysis failed: ${aiEsc(err.message)}</div>`;
+            } finally {
+                ubtn.disabled = false;
+                ubtn.textContent = ulabel;
+            }
+        }
+
+        function renderAiScore(r) {
+            const panel = document.getElementById('ai-score-panel');
+            const tone = AI_TONE[r.tone] || AI_TONE.fail;
+            const scoredAt = new Date(r.scoredAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+            const rows = (r.areas || []).map(a => {
+                const statusColors = { adequate: '#10b981', partial: '#f59e0b', inadequate: '#f97316', missing: '#ef4444', error: '#a855f7' };
+                const sc = statusColors[a.status] || 'var(--text-dim)';
+                const crit = a.criticalFailure ? `<span style="color:#ef4444; font-family:var(--font-mono); font-size:10px; margin-left:6px;">CRITICAL</span>` : '';
+                return `
+                    <tr style="border-top: 1px solid var(--border);">
+                        <td style="padding: 12px 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); vertical-align: top;">${aiEsc(a.qId)}</td>
+                        <td style="padding: 12px 10px; vertical-align: top;">
+                            <div style="font-size: 13px; color: var(--text-main);">${aiEsc(a.title)}${crit}</div>
+                            <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5;">${aiEsc(a.finding)}</div>
+                            ${a.recommendation ? `<div style="font-size: 12px; color: var(--accent); margin-top: 4px; line-height: 1.5;">→ ${aiEsc(a.recommendation)}</div>` : ''}
+                        </td>
+                        <td style="padding: 12px 10px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); vertical-align: top; white-space: nowrap;">${a.adequacy} / ${a.efficacy}</td>
+                        <td style="padding: 12px 10px; text-align: right; font-family: var(--font-mono); font-size: 13px; color: var(--text-main); vertical-align: top; white-space: nowrap;">${a.weightedMark}<span style="color: var(--text-dim);">/${a.maxMark}</span></td>
+                        <td style="padding: 12px 10px; text-align: center; vertical-align: top;"><span style="font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: ${sc}; border: 1px solid ${sc}; border-radius: 4px; padding: 2px 6px;">${aiEsc(a.status)}</span></td>
+                    </tr>`;
+            }).join('');
+
+            const risks = (r.topRisks || []).map(x => `<li style="margin-bottom: 6px;">${aiEsc(x)}</li>`).join('');
+
+            const warn = (r.incompleteModelOutput && r.incompleteModelOutput.length)
+                ? `<div style="padding: 12px 28px; background: rgba(168,85,247,0.12); border-bottom: 1px solid var(--border); font-size: 12px; color: #c084fc;">⚠ The AI did not return a grade for ${r.incompleteModelOutput.length} area(s) that had evidence (${aiEsc(r.incompleteModelOutput.join(', '))}). This score is provisional — re-run before relying on it.</div>`
+                : '';
+
+            const docNote = r.documents
+                ? `<span style="color: var(--text-dim);"> · ${r.documents.read} document${r.documents.read === 1 ? '' : 's'} read${r.documents.unreadable ? `, ${r.documents.unreadable} unreadable` : ''}</span>`
+                : '';
+            const uploadNote = (r.upload && r.upload.unmatched && r.upload.unmatched.length)
+                ? `<div style="padding: 10px 28px; background: rgba(245,158,11,0.10); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--pending);">⚠ ${r.upload.unmatched.length} uploaded file(s) didn’t map to a review area: ${aiEsc(r.upload.unmatched.join(', '))}. Rename them like “Q06-…​.pdf” and re-upload.</div>`
+                : '';
+
+            panel.innerHTML = `
+                ${warn}
+                ${uploadNote}
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 28px; border-bottom: 1px solid var(--border); flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 24px;">
+                        <div style="text-align: center;">
+                            <div style="font-family: var(--font-serif); font-size: 46px; line-height: 1; color: ${tone.color};">${r.score}<span style="font-size: 18px; color: var(--text-dim);">/100</span></div>
+                            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 6px;">weighted score</div>
+                        </div>
+                        <div>
+                            <span style="display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: ${tone.label}; border: 1px solid ${tone.label}; border-radius: 6px; padding: 4px 10px;">${aiEsc(r.rating)}</span>
+                            <div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">Raw ${r.rawScore}/100 · deductions −${r.deduction} · ${r.criticalFailures} critical gap${r.criticalFailures === 1 ? '' : 's'}${docNote}</div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: var(--font-mono);">${aiEsc(r.model)} · ${aiEsc(scoredAt)}</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn" style="font-size: 12px; padding: 8px 14px;" onclick="copyAiDraft(this)">Copy draft report</button>
+                        <button class="btn" style="font-size: 12px; padding: 8px 14px; border-color: var(--accent); color: var(--accent);" onclick="logAiToGhl(this)">Log to GHL</button>
+                    </div>
+                </div>
+
+                <div style="padding: 22px 28px; border-bottom: 1px solid var(--border);">
+                    <div style="font-family: var(--font-mono); font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Executive summary</div>
+                    <div style="font-size: 14px; line-height: 1.65; color: var(--text-main);">${aiEsc(r.executiveSummary) || '<span style="color:var(--text-dim);">(none generated)</span>'}</div>
+                    ${risks ? `<div style="font-family: var(--font-mono); font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin: 18px 0 8px;">Top risks</div><ul style="font-size: 13px; line-height: 1.5; color: var(--text-main); padding-left: 18px;">${risks}</ul>` : ''}
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="text-align: left;">
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">#</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Review area &amp; finding</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Adq / Eff</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Mark</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div style="padding: 14px 28px; font-size: 11px; color: var(--text-dim); line-height: 1.5; border-top: 1px solid var(--border);">
+                    AI-generated against a draft AUSTRAC-aligned Chapter 6 rubric. Adequacy = control documented; Efficacy = evidence it operates. Auditor review required before any finding is issued.
+                </div>`;
+        }
+
+        function copyAiDraft(btn) {
+            if (!_lastAiResult) return;
+            navigator.clipboard.writeText(_lastAiResult.draftReport).then(() => {
+                const t = btn.textContent; btn.textContent = '✓ Copied';
+                setTimeout(() => btn.textContent = t, 2000);
+            });
+        }
+
+        async function logAiToGhl(btn) {
+            if (!_lastAiResult) return;
+            const r = _lastAiResult;
+            const summary = `Centinl AI Compliance Score: ${r.score}/100 (${r.rating}). `
+                + `${r.criticalFailures} critical gap(s). Model: ${r.model}.\n\n${r.draftReport}`;
+            const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Logging…';
+            try {
+                const res = await fetch(`${BASE_URL}/api/rag-audit/note/${entityId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body: summary })
+                });
+                let data = {};
+                try { data = await res.json(); } catch {}
+                btn.textContent = (res.ok && data.success) ? '✓ Logged to GHL' : 'Failed';
+            } catch (err) {
+                btn.textContent = 'Failed';
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => btn.textContent = orig, 2500);
+            }
+        }
 
         fetchEntity();
     </script>
