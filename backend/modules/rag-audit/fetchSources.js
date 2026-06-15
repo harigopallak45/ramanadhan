@@ -43,22 +43,54 @@ function htmlToText(html) {
   return decodeEntities(t).replace(/[ \t]+/g, ' ').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-async function fetchOne(src) {
-  const res = await axios.get(src.url, {
-    headers: { 'User-Agent': UA, Accept: 'text/html,application/pdf,*/*' },
-    timeout: 60000, maxRedirects: 5, responseType: 'arraybuffer', maxContentLength: 30 * 1024 * 1024
-  });
-  const ctype = String(res.headers['content-type'] || '');
-  const buf = Buffer.from(res.data);
+// Set RAG_USE_WAYBACK=1 to skip the live site and pull the archived copy.
+// (Useful when austrac.gov.au is blocked from your network.)
+const USE_WAYBACK = process.env.RAG_USE_WAYBACK === '1';
 
-  let text;
-  if (/pdf/i.test(ctype) || src.url.toLowerCase().endsWith('.pdf')) {
-    const r = await parseBuffer(buf, src.url, ctype, { maxChars: 500000 });
-    text = r.text;
-  } else {
-    text = htmlToText(buf.toString('utf8'));
+async function get(url, timeout = 60000) {
+  return axios.get(url, {
+    headers: { 'User-Agent': UA, Accept: 'text/html,application/pdf,*/*' },
+    timeout, maxRedirects: 5, responseType: 'arraybuffer', maxContentLength: 30 * 1024 * 1024
+  });
+}
+
+function toText(buf, ctype, url) {
+  if (/pdf/i.test(ctype) || url.toLowerCase().endsWith('.pdf')) {
+    return parseBuffer(buf, url, ctype, { maxChars: 500000 }).then(r => r.text);
   }
-  return text;
+  return Promise.resolve(htmlToText(buf.toString('utf8')));
+}
+
+// Resolve the most recent archived snapshot of a URL and return its raw copy.
+async function fetchViaWayback(url) {
+  // Ask the availability API for the closest snapshot to "now".
+  let snapUrl = null;
+  try {
+    const a = await axios.get(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}&timestamp=20260601`, { timeout: 30000 });
+    snapUrl = a.data?.archived_snapshots?.closest?.url || null;
+  } catch (e) { /* fall through to CDX */ }
+  if (!snapUrl) {
+    const cdx = await axios.get(`http://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(url)}&output=json&filter=statuscode:200&limit=-1`, { timeout: 40000 });
+    const rows = (cdx.data || []).slice(1);
+    if (!rows.length) throw new Error('no archived snapshot');
+    const last = rows[rows.length - 1];
+    snapUrl = `http://web.archive.org/web/${last[1]}/${last[2]}`;
+  }
+  // `id_` returns the original archived bytes without the Wayback chrome.
+  const raw = snapUrl.replace(/\/web\/(\d+)\//, '/web/$1id_/');
+  const res = await get(raw, 45000);
+  return toText(Buffer.from(res.data), String(res.headers['content-type'] || ''), url);
+}
+
+async function fetchOne(src) {
+  if (USE_WAYBACK) return fetchViaWayback(src.url);
+  try {
+    const res = await get(src.url);
+    return await toText(Buffer.from(res.data), String(res.headers['content-type'] || ''), src.url);
+  } catch (e) {
+    // Live site blocked/unreachable → try the archived copy.
+    return fetchViaWayback(src.url);
+  }
 }
 
 async function run() {

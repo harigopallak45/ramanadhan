@@ -1,0 +1,2 @@
+# Generated BM25 retrieval index (rebuilt by `npm run rag:ingest` / `rag:fetch`)
+knowledge-index.json
