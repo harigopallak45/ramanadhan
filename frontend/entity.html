@@ -399,6 +399,29 @@
         }
 
         .action-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+
+        /* ===== Centinl UI polish (unified across all pages) ===== */
+        :root { --gold: #d4b256; }
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+        ::selection { background: rgba(212,178,86,0.32); color: #fff; }
+        *::-webkit-scrollbar { width: 10px; height: 10px; }
+        *::-webkit-scrollbar-track { background: transparent; }
+        *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+        *::-webkit-scrollbar-thumb:hover { background: rgba(212,178,86,0.5); background-clip: content-box; }
+        :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+        /* Responsive */
+        @media (max-width: 820px) {
+            .container { padding: 0 20px; margin: 24px auto; }
+            .header-box { flex-direction: column; gap: 20px; }
+            .header-box > div[style*="text-align: right"] { text-align: left !important; }
+            .action-row { justify-content: flex-start !important; }
+            #ai-score-panel table { display: block; overflow-x: auto; white-space: nowrap; }
+        }
+        @media (max-width: 480px) {
+            .action-row .btn { flex: 1 1 100%; justify-content: center; }
+        }
     </style>
 </head>
 <body>
