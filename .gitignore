@@ -28,3 +28,13 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# Client documents & confidential evidence (never commit)
+backend/modules/OneDrive_*/
+backend/modules/additional/
+
+# Generated reports (may contain client data)
+Centinl_*.pdf
+
+# Runtime
+*.err
