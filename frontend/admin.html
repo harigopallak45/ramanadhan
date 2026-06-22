@@ -309,6 +309,35 @@
             .stat-card { padding: 24px; }
             .stat-value { font-size: 30px; }
         }
+
+        /* ===== AI Scorecard (added) ===== */
+        .engine-chip { display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10px; padding:5px 10px; border-radius:6px; background:rgba(16,185,129,0.12); color:var(--success); border:1px solid rgba(16,185,129,0.3); white-space:nowrap; }
+        .engine-chip.off { background:rgba(239,68,68,0.12); color:#ef4444; border-color:rgba(239,68,68,0.3); }
+        #scorecard-modal { display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); align-items:flex-start; justify-content:center; padding:40px 20px; overflow-y:auto; }
+        .sc-panel { background:var(--surface); border:1px solid var(--border); width:100%; max-width:720px; border-radius:16px; padding:28px; }
+        .sc-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+        .sc-pipe { display:flex; align-items:center; gap:8px; margin-bottom:18px; font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); }
+        .sc-pipe .step { padding:5px 12px; border-radius:100px; background:rgba(255,255,255,0.05); color:var(--text-dim); }
+        .sc-pipe .step.active { background:rgba(212,178,86,0.15); color:var(--accent); }
+        .sc-pipe .step.done { color:var(--success); }
+        .sc-score-row { display:flex; gap:12px; margin-bottom:20px; }
+        .sc-score-big { flex:1.4; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
+        .sc-bar { height:6px; border-radius:100px; background:rgba(255,255,255,0.08); overflow:hidden; margin-top:12px; }
+        .sc-bar > i { display:block; height:100%; }
+        .sc-statmini { background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:11px 13px; }
+        .sc-statmini .v { font-size:21px; font-weight:600; font-family:var(--font-serif); margin-top:2px; }
+        .sc-area-row { display:grid; grid-template-columns:46px 1fr 150px 92px; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px; }
+        .sc-area-row:last-child { border-bottom:none; }
+        .dual { display:flex; gap:4px; }
+        .dual > span { flex:1; height:5px; border-radius:100px; background:rgba(255,255,255,0.08); overflow:hidden; }
+        .dual > span > i { display:block; height:100%; }
+        .sc-pill { font-size:10px; padding:3px 8px; border-radius:6px; text-align:center; font-family:var(--font-mono); text-transform:uppercase; }
+        .gap-chip { font-size:11px; padding:4px 9px; border-radius:6px; }
+        .sc-btn { background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text-main); padding:8px 14px; border-radius:6px; cursor:pointer; font-family:var(--font-sans); font-size:13px; }
+        .sc-btn:hover { background:var(--surface-hover); }
+        .sc-btn.primary { background:var(--accent); color:#000; border-color:var(--accent); font-weight:500; }
+        .btn-score { background:rgba(212,178,86,0.12); border:1px solid rgba(212,178,86,0.4); color:var(--accent); padding:6px 12px; border-radius:6px; cursor:pointer; font-family:var(--font-sans); font-size:12px; white-space:nowrap; }
+        .btn-score:hover { background:rgba(212,178,86,0.2); }
     </style>
 </head>
 <body>
@@ -323,7 +352,8 @@
             </select>
         </div>
         <div style="display: flex; align-items: center; gap: 16px;">
-            <div class="admin-badge">SYSTEM OVERSEER</div>
+            <span id="header-engine" class="engine-chip">engine…</span>
+            <div class="admin-badge">Administrator</div>
             <button onclick="logout()" style="background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 4px 12px; border-radius: 4px; font-size: 11px; font-family: var(--font-mono); cursor: pointer;">LOGOUT</button>
         </div>
     </header>
@@ -331,34 +361,42 @@
     <main>
         <!-- Analytics Section -->
         <div class="analytics-container animate-in">
-            <div class="chart-card">
-                <div class="stat-label">Audit Completion Trend</div>
-                <canvas id="trendChart"></canvas>
+            <div class="chart-card" style="display:flex; flex-direction:column; justify-content:center; gap:18px;">
+                <div class="stat-label">How an audit works</div>
+                <div style="display:flex; flex-direction:column; gap:14px;">
+                    <div style="display:flex; align-items:center; gap:12px;"><span style="flex:none; width:24px; height:24px; border-radius:50%; background:rgba(212,178,86,0.15); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">1</span><span style="font-size:14px;">Invite a client to the portal</span></div>
+                    <div style="display:flex; align-items:center; gap:12px;"><span style="flex:none; width:24px; height:24px; border-radius:50%; background:rgba(212,178,86,0.15); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">2</span><span style="font-size:14px;">They submit their evidence &amp; answers</span></div>
+                    <div style="display:flex; align-items:center; gap:12px;"><span style="flex:none; width:24px; height:24px; border-radius:50%; background:rgba(212,178,86,0.15); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">3</span><span style="font-size:14px;">You run the <strong style="color:var(--accent);">AI Score</strong> on their file</span></div>
+                    <div style="display:flex; align-items:center; gap:12px;"><span style="flex:none; width:24px; height:24px; border-radius:50%; background:rgba(212,178,86,0.15); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">4</span><span style="font-size:14px;">Review findings &amp; request any gaps</span></div>
+                </div>
             </div>
             <div class="chart-card">
-                <div class="stat-label">Risk Distribution</div>
+                <div class="stat-label">Audit status at a glance</div>
                 <canvas id="riskChart"></canvas>
             </div>
         </div>
 
         <div class="dashboard-grid">
             <div class="stat-card animate-in" style="animation-delay: 0.1s;">
-                <div class="stat-label">Total Entities</div>
+                <div class="stat-label">Total clients</div>
                 <div class="stat-value" id="stat-total">—</div>
             </div>
             <div class="stat-card animate-in" style="animation-delay: 0.2s;">
-                <div class="stat-label">Completed Submissions</div>
+                <div class="stat-label">Completed audits</div>
                 <div class="stat-value" id="stat-completed">—</div>
             </div>
             <div class="stat-card animate-in" style="animation-delay: 0.3s;">
-                <div class="stat-label">Active Audits</div>
+                <div class="stat-label">Awaiting submission</div>
                 <div class="stat-value" id="stat-active">—</div>
             </div>
         </div>
 
         <div class="table-container animate-in" style="animation-delay: 0.4s;">
             <div class="table-header">
-                <h2>User Directory</h2>
+                <div>
+                    <h2>Clients</h2>
+                    <div style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">Pick a client, then run their AI score or open their file.</div>
+                </div>
                 <div style="display:flex; gap: 16px; align-items: center;">
                 <select id="user-filter" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); padding: 10px 16px; border-radius: 6px; color: white; font-family: var(--font-sans); font-size: 14px; outline: none; cursor: pointer;">
                     <option value="all">All Statuses</option>
@@ -375,17 +413,18 @@
         </div>
             
             <div id="loading-state">
-                <div style="margin-bottom: 16px;">Fetching system data...</div>
-                <div style="font-family: var(--font-mono); font-size: 10px; color: var(--accent);">INITIALIZING HANDSHAKE</div>
+                <div style="margin-bottom: 8px;">Loading your clients…</div>
+                <div style="font-size: 12px; color: var(--text-dim);">One moment.</div>
             </div>
 
             <table id="users-table" style="display: none;">
                 <thead>
                     <tr>
-                        <th>Representative</th>
-                        <th>Entity / Company</th>
-                        <th>Status</th>
-                        <th>Action</th>
+                        <th style="width: 36px;"></th>
+                        <th>Client</th>
+                        <th>Company</th>
+                        <th>Audit status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="users-tbody">
@@ -396,12 +435,12 @@
     </main>
 
     <div id="bulk-action-bar">
-        <div style="font-family: var(--font-mono); font-size: 11px; opacity: 0.6;"><span id="selected-count">0</span> SELECTED</div>
+        <div style="font-size: 12px; opacity: 0.6;"><span id="selected-count">0</span> selected</div>
         <div style="width: 1px; height: 20px; background: rgba(0,0,0,0.1);"></div>
-        <button onclick="handleBulkNudge()" class="bulk-btn">Nudge All</button>
-        <button onclick="handleBulkTag()" class="bulk-btn">Apply Tag</button>
+        <button onclick="handleBulkNudge()" class="bulk-btn">Send reminder</button>
+        <button onclick="handleBulkTag()" class="bulk-btn">Add tag</button>
         <div style="width: 1px; height: 20px; background: rgba(0,0,0,0.1);"></div>
-        <button onclick="clearSelection()" style="font-size: 11px; opacity: 0.5; background: none; border: none; cursor: pointer;">DESELECT</button>
+        <button onclick="clearSelection()" style="font-size: 12px; opacity: 0.5; background: none; border: none; cursor: pointer;">Clear selection</button>
     </div>
 
     <!-- Invite Modal -->
@@ -421,6 +460,23 @@
         </div>
     </div>
 
+    <!-- AI Scorecard Modal -->
+    <div id="scorecard-modal">
+        <div class="sc-panel">
+            <div class="sc-head">
+                <div>
+                    <div id="sc-entity" style="font-family: var(--font-serif); font-size: 22px;">Entity</div>
+                    <div style="font-size: 12px; color: var(--text-dim);">Independent AML/CTF review · grounded scoring</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="sc-engine" class="engine-chip">engine…</span>
+                    <button onclick="closeScorecard()" style="background: none; border: 1px solid var(--border); color: var(--text-dim); width: 30px; height: 30px; border-radius: 6px; cursor: pointer;">✕</button>
+                </div>
+            </div>
+            <div id="sc-body"></div>
+        </div>
+    </div>
+
     <script>
         let BASE_URL = window.location.hostname.includes('localhost') ? 'http://localhost:5001' : 'https://amlcompliance.com.au/hlgp';
         let allUsers = [];
@@ -436,6 +492,7 @@
             }
 
             fetchUsers();
+            loadEngineChip();
         }
 
         function logout() {
@@ -472,45 +529,31 @@
                     table.style.display = 'table';
                 }
             } catch (err) {
-                loading.innerText = 'System Error: Failed to connect to secure vault.';
+                loading.innerText = "Couldn't connect to the server. Please refresh and try again.";
             }
         }
 
         function initCharts(users) {
-            const ctxTrend = document.getElementById('trendChart').getContext('2d');
             const ctxRisk = document.getElementById('riskChart').getContext('2d');
 
-            // Trend Chart
-            new Chart(ctxTrend, {
-                type: 'line',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    datasets: [{
-                        label: 'Audit Submissions',
-                        data: [12, 19, 3, 5, 2, 3],
-                        borderColor: '#d4b256',
-                        tension: 0.4
-                    }]
-                },
-                options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
-            });
+            // Honest status breakdown from real client data (no placeholder numbers).
+            const completed = users.filter(u => u.status === 'completed').length;
+            const inProgress = users.length - completed;
 
-            // Risk Chart
             new Chart(ctxRisk, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Completed', 'Pending', 'Flagged'],
+                    labels: ['Completed', 'In progress'],
                     datasets: [{
-                        data: [
-                            users.filter(u => u.status === 'completed').length,
-                            users.filter(u => u.status === 'pending').length,
-                            2
-                        ],
-                        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                        data: [completed, inProgress],
+                        backgroundColor: ['#10b981', '#f59e0b'],
                         borderWidth: 0
                     }]
                 },
-                options: { maintainAspectRatio: false }
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { color: '#999', font: { size: 12 } } } }
+                }
             });
         }
 
@@ -534,7 +577,10 @@
                     </td>
                     <td>${user.company || '—'}</td>
                     <td><span class="status-pill status-${user.status.replace(' ', '-').toLowerCase()}">${user.status}</span></td>
-                    <td><button class="btn-view" onclick="window.location.href='/audit/entity?id=${user.id}'">View Details</button></td>
+                    <td style="display:flex; gap:6px; align-items:center;">
+                        <button class="btn-score" onclick="openScorecard('${user.id}')">✦ AI Score</button>
+                        <button class="btn-view" onclick="window.location.href='/audit/entity?id=${user.id}'">View</button>
+                    </td>
                 </tr>
             `).join('');
         }
@@ -641,6 +687,203 @@
                 alert('Request failed: ' + err.message);
             }
             document.getElementById('btn-send-invite').innerText = 'Send Invite';
+        }
+
+        /* ============ AI Scorecard ============ */
+        let scEngine = null, currentScore = null, currentContact = null, currentName = '';
+
+        async function loadEngineChip() {
+            const token = localStorage.getItem('jwt_token');
+            const el = document.getElementById('header-engine');
+            try {
+                const r = await fetch(`${BASE_URL}/api/rag-audit/health`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const d = await r.json();
+                scEngine = d;
+                if (el) {
+                    if (d.configured) { el.className = 'engine-chip'; el.innerHTML = '✓ AI ready'; el.title = `${d.provider || ''} · ${d.model || ''}`; }
+                    else { el.className = 'engine-chip off'; el.innerHTML = 'AI not set up'; }
+                }
+            } catch (e) {
+                if (el) { el.className = 'engine-chip off'; el.innerHTML = 'AI offline'; }
+            }
+        }
+
+        function toneColor(score) {
+            return score >= 85 ? 'var(--success)' : score >= 70 ? 'var(--accent)' : score >= 50 ? 'var(--pending)' : '#ef4444';
+        }
+        function bandBg(score) {
+            return score >= 85 ? 'rgba(16,185,129,0.15)' : score >= 70 ? 'rgba(212,178,86,0.15)' : score >= 50 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)';
+        }
+        function statusColor(s) {
+            return s === 'adequate' ? 'var(--success)' : s === 'partial' ? 'var(--pending)' : (s === 'inadequate' || s === 'error') ? '#ef4444' : 'var(--text-dim)';
+        }
+        function statusBg(s) {
+            return s === 'adequate' ? 'rgba(16,185,129,0.15)' : s === 'partial' ? 'rgba(245,158,11,0.15)' : (s === 'inadequate' || s === 'error') ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
+        }
+        function markColor(v) { return v >= 60 ? 'var(--success)' : v >= 30 ? 'var(--pending)' : '#ef4444'; }
+        function plainStatus(s) { return ({ adequate: 'Good', partial: 'Partial', inadequate: 'Weak', missing: 'Not provided', error: 'Not scored' })[s] || s; }
+        function bandText(score) { return score >= 85 ? 'Strong — this file looks compliant.' : score >= 70 ? 'Mostly there — a few gaps to fix.' : score >= 50 ? 'Not ready — several things need fixing.' : 'Not ready — major evidence is missing.'; }
+
+        function pipelineHtml(state) {
+            const tick = '✓';
+            return `<div class="sc-pipe">
+                <span class="step done">${tick} received</span><span>→</span>
+                <span class="step ${state === 'processing' ? 'active' : 'done'}">${state === 'done' ? tick + ' ' : ''}reading documents</span><span>→</span>
+                <span class="step ${state === 'done' ? 'active' : ''}">${state === 'done' ? '✓ ' : ''}done</span>
+            </div>`;
+        }
+
+        function openScorecard(id) {
+            const u = allUsers.find(x => String(x.id) === String(id));
+            currentContact = id;
+            currentName = u ? (u.company || u.name || u.email) : 'Entity';
+            currentScore = null;
+            document.getElementById('sc-entity').innerText = currentName;
+            const ce = document.getElementById('sc-engine');
+            if (scEngine && scEngine.configured) { ce.className = 'engine-chip'; ce.innerHTML = '✓ AI ready'; ce.title = `${scEngine.provider} · ${scEngine.model}`; }
+            else { ce.className = 'engine-chip off'; ce.innerHTML = 'AI offline'; }
+            document.getElementById('scorecard-modal').style.display = 'flex';
+            runScore();
+        }
+
+        function closeScorecard() { document.getElementById('scorecard-modal').style.display = 'none'; }
+
+        async function runScore() {
+            const body = document.getElementById('sc-body');
+            body.innerHTML = pipelineHtml('processing')
+                + `<div style="text-align:center; padding:48px 0; color:var(--text-dim); font-size:14px;">Checking the client's documents against AUSTRAC rules…<br><span style="font-size:12px;">This usually takes a few seconds.</span></div>`;
+            const token = localStorage.getItem('jwt_token');
+            try {
+                const r = await fetch(`${BASE_URL}/api/rag-audit/score/${currentContact}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const d = await r.json();
+                if (!d.success) {
+                    body.innerHTML = pipelineHtml('processing')
+                        + `<div style="padding:34px; text-align:center; color:#ef4444;">${d.message || 'Scoring failed.'}</div>`;
+                    return;
+                }
+                currentScore = d.result;
+                renderScorecard(d.result);
+            } catch (e) {
+                body.innerHTML = `<div style="padding:34px; text-align:center; color:#ef4444;">Request failed: ${e.message}</div>`;
+            }
+        }
+
+        function renderScorecard(res) {
+            const col = toneColor(res.score);
+            const areas = res.areas || [];
+            const answered = areas.filter(a => a.status !== 'missing').length;
+            const gaps = areas.filter(a => a.status === 'missing' || a.status === 'inadequate');
+            const docs = res.documents || { read: 0, unreadable: 0 };
+
+            const areaRows = areas.map(a => `
+                <div class="sc-area-row">
+                    <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-dim);">${a.qId}</span>
+                    <span>${a.title}</span>
+                    <span class="dual">
+                        <span><i style="width:${a.adequacy || 0}%; background:${markColor(a.adequacy || 0)};"></i></span>
+                        <span><i style="width:${a.efficacy || 0}%; background:${markColor(a.efficacy || 0)};"></i></span>
+                    </span>
+                    <span class="sc-pill" style="background:${statusBg(a.status)}; color:${statusColor(a.status)};">${plainStatus(a.status)}</span>
+                </div>`).join('');
+
+            const gapChips = gaps.length
+                ? gaps.map(g => `<span class="gap-chip" style="background:${statusBg(g.status)}; color:${statusColor(g.status)};">${g.qId} ${g.title.split(' ').slice(0, 2).join(' ')}</span>`).join('')
+                : '<span style="color:var(--text-dim); font-size:12px;">No outstanding gaps.</span>';
+
+            document.getElementById('sc-body').innerHTML = `
+                ${pipelineHtml('done')}
+                <div class="sc-score-row">
+                    <div class="sc-score-big">
+                        <div style="font-size:12px; color:var(--text-dim);">Overall score</div>
+                        <div style="display:flex; align-items:baseline; gap:10px; margin-top:4px;">
+                            <span style="font-size:34px; font-weight:600; font-family:var(--font-serif); color:${col};">${res.score}</span>
+                            <span style="font-size:13px; color:var(--text-dim);">/ 100</span>
+                            <span style="margin-left:auto; font-size:11px; padding:4px 10px; border-radius:6px; background:${bandBg(res.score)}; color:${col};">${res.rating}</span>
+                        </div>
+                        <div class="sc-bar"><i style="width:${res.score}%; background:${col};"></i></div>
+                        <div style="font-size:13px; color:${col}; margin-top:10px;">${bandText(res.score)}</div>
+                    </div>
+                    <div style="flex:1; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div class="sc-statmini"><div style="font-size:11px; color:var(--text-dim);">Serious gaps</div><div class="v" style="color:#ef4444;">${res.criticalFailures}</div></div>
+                        <div class="sc-statmini"><div style="font-size:11px; color:var(--text-dim);">Sections with evidence</div><div class="v">${answered} / ${areas.length}</div></div>
+                        <div class="sc-statmini"><div style="font-size:11px; color:var(--text-dim);">Documents read</div><div class="v">${docs.read}</div></div>
+                        <div class="sc-statmini"><div style="font-size:11px; color:var(--text-dim);">Couldn't read</div><div class="v" style="color:var(--pending);">${docs.unreadable}</div></div>
+                    </div>
+                </div>
+
+                <div style="font-size:13px; font-weight:500; margin:0 0 4px;">Section-by-section results</div>
+                <div style="font-size:11px; color:var(--text-dim); margin:0 0 8px;">Each row has two bars — left: is it documented · right: does it actually work.</div>
+                <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:20px;">${areaRows}</div>
+
+                <div style="border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:18px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                        <div style="font-size:13px; font-weight:500;">Missing items · ${gaps.length}</div>
+                        <button class="sc-btn" onclick="requestEvidence()">Ask client for these</button>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;">${gapChips}</div>
+                </div>
+
+                <div id="sc-report" style="display:none; white-space:pre-wrap; font-family:var(--font-mono); font-size:11px; color:var(--text-dim); background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; max-height:300px; overflow:auto;"></div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="sc-btn" onclick="toggleReport()">See full write-up</button>
+                    <button class="sc-btn" onclick="exportScorecardPdf()">Download report</button>
+                    <button class="sc-btn primary" onclick="runScore()">Run again</button>
+                </div>`;
+        }
+
+        function toggleReport() {
+            const el = document.getElementById('sc-report');
+            if (!el) return;
+            if (el.style.display === 'none') { el.textContent = (currentScore && currentScore.draftReport) || '(no report)'; el.style.display = 'block'; }
+            else { el.style.display = 'none'; }
+        }
+
+        async function requestEvidence() {
+            if (!currentScore) return;
+            const gaps = (currentScore.areas || []).filter(a => a.status === 'missing' || a.status === 'inadequate');
+            if (!gaps.length) return alert('No outstanding evidence gaps to request.');
+            const lines = gaps.map(g => `• ${g.qId} ${g.title}`).join('\n');
+            if (!confirm(`Log an evidence request for ${gaps.length} item(s) to this contact's GHL activity feed?`)) return;
+            const token = localStorage.getItem('jwt_token');
+            try {
+                const r = await fetch(`${BASE_URL}/api/rag-audit/note/${currentContact}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body: `Centinl — evidence requested from client (${gaps.length} items):\n${lines}` })
+                });
+                const d = await r.json();
+                alert(d.success ? 'Evidence request logged to GHL.' : (d.message || 'Failed to log request.'));
+            } catch (e) { alert('Failed: ' + e.message); }
+        }
+
+        function exportScorecardPdf() {
+            if (!currentScore) return;
+            const r = currentScore;
+            const rows = (r.areas || []).map(a =>
+                `<tr><td>${a.qId}</td><td>${a.title}</td><td style="text-align:center;">${a.adequacy}/${a.efficacy}</td><td>${a.status}</td><td>${(a.finding || '').replace(/</g, '&lt;')}</td></tr>`).join('');
+            const w = window.open('', '_blank');
+            w.document.write(`<html><head><title>Centinl Report — ${currentName}</title><style>
+                body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:32px;max-width:900px;margin:auto;}
+                h1{font-size:20px;margin:0;} .sub{color:#666;font-size:13px;margin:4px 0 18px;}
+                .band{display:inline-block;padding:4px 12px;border-radius:6px;background:#f0f0f0;font-size:13px;}
+                table{width:100%;border-collapse:collapse;font-size:11px;margin-top:14px;}
+                td,th{border:1px solid #ddd;padding:6px;text-align:left;vertical-align:top;} th{background:#f5f5f5;}
+                .muted{color:#777;font-size:11px;margin-top:18px;}</style></head><body>
+                <h1>Centinl — Independent AML/CTF Review</h1>
+                <div class="sub"><b>${currentName}</b> · ${new Date(r.scoredAt || Date.now()).toLocaleString()}</div>
+                <h2>Score: ${r.score}/100 &nbsp;<span class="band">${r.rating}</span></h2>
+                <div class="muted">raw ${r.rawScore} · −${r.deduction} critical deductions · ${r.criticalFailures} critical gaps · engine ${r.model}</div>
+                <p>${(r.executiveSummary || '').replace(/</g, '&lt;')}</p>
+                <table><thead><tr><th>Area</th><th>Title</th><th>Adq/Eff</th><th>Status</th><th>Finding</th></tr></thead><tbody>${rows}</tbody></table>
+                <div class="muted">Generated by Centinl AI reviewer. Auditor review required before issue.</div>
+                </body></html>`);
+            w.document.close();
+            setTimeout(() => w.print(), 500);
         }
 
     </script>

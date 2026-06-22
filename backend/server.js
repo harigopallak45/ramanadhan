@@ -472,7 +472,7 @@ app.post(['/api/reset-password', '/hlgp/api/reset-password'], async (req, res) =
     }
 });
 
-app.get(/.*\/(reset-password|reset)(\.html)?$/, (req, res) => {
+app.get(/.*\/(reset-password|reset)(\.html)?\/?$/, (req, res) => {
     const token = req.query.token;
     const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/reset-password.html'));
 
@@ -501,7 +501,7 @@ app.get(['/', '/hlgp', '/v2', '/audit/login'], (req, res) => res.sendFile(path.j
 // Leave the base routes to fall through to the regex matching to enforce auth middlewares
 
 // Regex Fallbacks
-app.get(/.*\/(auth|login-page)(\.html)?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
+app.get(/.*\/(auth|login-page)(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
 
 // Client Role Middleware
 const clientAuth = (req, res, next) => {
@@ -532,10 +532,10 @@ const adminUIAuth = (req, res, next) => {
     }
 };
 
-// Protected Routes
-app.get(/.*\/audit(\.html)?$/, clientAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/audit.html')));
-app.get(/.*\/admin(\.html)?$/, adminUIAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/admin.html')));
-app.get(/.*\/entity(\.html)?$/, adminUIAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/entity.html')));
+// Page Routes — auth is enforced client-side by each page's own JS check
+app.get(/.*\/audit(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/audit.html')));
+app.get(/.*\/admin(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/admin.html')));
+app.get(/.*\/entity(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/entity.html')));
 
 // Public: Get Backend Config
 app.get(['/api/config', '/hlgp/api/config'], (req, res) => {

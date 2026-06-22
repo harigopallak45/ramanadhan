@@ -431,7 +431,7 @@
             <div class="tagline">s.161 Independent Review</div>
         </div>
         <div style="display:flex; gap: 16px;">
-            <button class="btn" onclick="window.location.href='/audit/admin'">← Back to Roster</button>
+            <button class="btn" onclick="window.location.href='/audit/admin'">← Back to clients</button>
         </div>
     </nav>
 
@@ -698,7 +698,7 @@
                 const data = await res.json();
                 if (data.success) renderEntity(data.contact);
             } catch (err) {
-                document.getElementById('content-area').innerHTML = `<div style="color:red; text-align:center; padding: 40px;">Connection Error: ${err.message}</div>`;
+                document.getElementById('content-area').innerHTML = `<div style="color:red; text-align:center; padding: 40px;">Couldn't load this client. Please refresh and try again.<br><span style="font-size:11px; opacity:0.7;">${err.message}</span></div>`;
             }
         }
 
@@ -1043,8 +1043,8 @@
                     <div style="text-align: right;">
                         <p style="font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 16px;">GHL ID: ${contact.id}</p>
                         <div class="action-row" style="justify-content: flex-end;">
-                            <button class="btn" id="ai-score-btn" style="border-color: var(--accent); color: var(--accent); font-weight: 600;" onclick="runAiScore()">✦ AI Compliance Score</button>
-                            <button class="btn" id="ai-upload-btn" style="border-color: var(--accent); color: var(--accent);" onclick="document.getElementById('ai-upload-input').click()">⬆ Upload &amp; Analyze</button>
+                            <button class="btn" id="ai-score-btn" style="border-color: var(--accent); color: var(--accent); font-weight: 600;" onclick="runAiScore()">✦ Run AI score</button>
+                            <button class="btn" id="ai-upload-btn" style="border-color: var(--accent); color: var(--accent);" onclick="document.getElementById('ai-upload-input').click()">⬆ Upload documents</button>
                             <input type="file" id="ai-upload-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" style="display:none" onchange="uploadAndAnalyze(this.files); this.value='';">
                             <button class="btn btn-primary" onclick="exportCSV()">Export to CSV</button>
                             ${isAdmin ? 
@@ -1069,7 +1069,7 @@
                     <textarea id="composer-msg" style="width: 100%; height: 120px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: white; padding: 12px; font-family: var(--font-sans); outline: none; margin-bottom: 16px;" placeholder="Type your request or update here..."></textarea>
                     <div style="display: flex; gap: 12px; justify-content: flex-end;">
                         <button class="btn" onclick="document.getElementById('composer-overlay').style.display='none'">Cancel</button>
-                        <button class="btn btn-primary" id="btn-send-request" onclick="sendClientRequest()">Send via GHL</button>
+                        <button class="btn btn-primary" id="btn-send-request" onclick="sendClientRequest()">Send message</button>
                     </div>
                 </div>
 
@@ -1211,7 +1211,7 @@
                 document.getElementById('composer-overlay').style.display = 'none';
                 document.getElementById('composer-msg').value = '';
             } catch (err) { alert('Error: ' + err.message); }
-            document.getElementById('btn-send-request').innerText = 'Send via GHL';
+            document.getElementById('btn-send-request').innerText = 'Send message';
         }
 
         async function toggleEditPermission(action) {
@@ -1248,7 +1248,7 @@
             
             title.textContent = filename;
             openBtn.href = actualUrl;
-            body.innerHTML = '<div style="color: var(--text-dim); font-family: var(--font-mono); font-size: 12px; padding: 20px;">Loading media...</div>';
+            body.innerHTML = '<div style="color: var(--text-dim); font-size: 13px; padding: 20px;">Loading…</div>';
             
             modal.style.display = 'flex';
             // Trigger reflow
@@ -1333,8 +1333,8 @@
             panel.innerHTML = `
                 <div style="padding: 40px; text-align: center; color: var(--text-dim);">
                     <div style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent);">Centinl AI Reviewer</div>
-                    <div style="margin-top: 14px; font-size: 15px; color: var(--text-main);">Assessing 23 review areas against the Chapter 6 framework…</div>
-                    <div style="margin-top: 8px; font-size: 12px;">Adequacy &amp; efficacy scoring · usually 5–15 seconds</div>
+                    <div style="margin-top: 14px; font-size: 15px; color: var(--text-main);">Checking all 23 areas against AUSTRAC rules…</div>
+                    <div style="margin-top: 8px; font-size: 12px;">This usually takes 5–15 seconds.</div>
                 </div>`;
 
             try {
@@ -1351,7 +1351,7 @@
                 _lastAiResult = data.result;
                 renderAiScore(data.result);
             } catch (err) {
-                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">AI scoring failed: ${aiEsc(err.message)}</div>`;
+                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">The AI couldn't finish scoring: ${aiEsc(err.message)}</div>`;
             } finally {
                 btn.disabled = false;
                 btn.textContent = btnLabel;
@@ -1373,7 +1373,7 @@
                 <div style="padding: 40px; text-align: center; color: var(--text-dim);">
                     <div style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent);">Centinl AI Reviewer</div>
                     <div style="margin-top: 14px; font-size: 15px; color: var(--text-main);">Reading ${files.length} document${files.length === 1 ? '' : 's'} and scoring…</div>
-                    <div style="margin-top: 8px; font-size: 12px;">Tip: name files like “Q06-transactions.pdf” so they map to the right area.</div>
+                    <div style="margin-top: 8px; font-size: 12px;">Files are sorted into sections automatically. If one lands in the wrong place, add its question number to the file name (e.g. “Q06 …”) and upload again.</div>
                 </div>`;
 
             const fd = new FormData();
@@ -1395,7 +1395,7 @@
                 _lastAiResult = data.result;
                 renderAiScore(data.result);
             } catch (err) {
-                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">Upload analysis failed: ${aiEsc(err.message)}</div>`;
+                panel.innerHTML = `<div style="padding: 28px; color: #ef4444; font-size: 14px;">Couldn't analyse those files: ${aiEsc(err.message)}</div>`;
             } finally {
                 ubtn.disabled = false;
                 ubtn.textContent = ulabel;
@@ -1409,6 +1409,7 @@
 
             const rows = (r.areas || []).map(a => {
                 const statusColors = { adequate: '#10b981', partial: '#f59e0b', inadequate: '#f97316', missing: '#ef4444', error: '#a855f7' };
+                const statusLabels = { adequate: 'Good', partial: 'Partial', inadequate: 'Weak', missing: 'Not provided', error: 'Not scored' };
                 const sc = statusColors[a.status] || 'var(--text-dim)';
                 const crit = a.criticalFailure ? `<span style="color:#ef4444; font-family:var(--font-mono); font-size:10px; margin-left:6px;">CRITICAL</span>` : '';
                 return `
@@ -1421,21 +1422,21 @@
                         </td>
                         <td style="padding: 12px 10px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); vertical-align: top; white-space: nowrap;">${a.adequacy} / ${a.efficacy}</td>
                         <td style="padding: 12px 10px; text-align: right; font-family: var(--font-mono); font-size: 13px; color: var(--text-main); vertical-align: top; white-space: nowrap;">${a.weightedMark}<span style="color: var(--text-dim);">/${a.maxMark}</span></td>
-                        <td style="padding: 12px 10px; text-align: center; vertical-align: top;"><span style="font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: ${sc}; border: 1px solid ${sc}; border-radius: 4px; padding: 2px 6px;">${aiEsc(a.status)}</span></td>
+                        <td style="padding: 12px 10px; text-align: center; vertical-align: top;"><span style="font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: ${sc}; border: 1px solid ${sc}; border-radius: 4px; padding: 2px 6px;">${statusLabels[a.status] || aiEsc(a.status)}</span></td>
                     </tr>`;
             }).join('');
 
             const risks = (r.topRisks || []).map(x => `<li style="margin-bottom: 6px;">${aiEsc(x)}</li>`).join('');
 
             const warn = (r.incompleteModelOutput && r.incompleteModelOutput.length)
-                ? `<div style="padding: 12px 28px; background: rgba(168,85,247,0.12); border-bottom: 1px solid var(--border); font-size: 12px; color: #c084fc;">⚠ The AI did not return a grade for ${r.incompleteModelOutput.length} area(s) that had evidence (${aiEsc(r.incompleteModelOutput.join(', '))}). This score is provisional — re-run before relying on it.</div>`
+                ? `<div style="padding: 12px 28px; background: rgba(168,85,247,0.12); border-bottom: 1px solid var(--border); font-size: 12px; color: #c084fc;">⚠ The AI couldn't grade ${r.incompleteModelOutput.length} area(s) that had evidence (${aiEsc(r.incompleteModelOutput.join(', '))}). Run it again before relying on this score.</div>`
                 : '';
 
             const docNote = r.documents
                 ? `<span style="color: var(--text-dim);"> · ${r.documents.read} document${r.documents.read === 1 ? '' : 's'} read${r.documents.unreadable ? `, ${r.documents.unreadable} unreadable` : ''}</span>`
                 : '';
             const uploadNote = (r.upload && r.upload.unmatched && r.upload.unmatched.length)
-                ? `<div style="padding: 10px 28px; background: rgba(245,158,11,0.10); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--pending);">⚠ ${r.upload.unmatched.length} uploaded file(s) didn’t map to a review area: ${aiEsc(r.upload.unmatched.join(', '))}. Rename them like “Q06-…​.pdf” and re-upload.</div>`
+                ? `<div style="padding: 10px 28px; background: rgba(245,158,11,0.10); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--pending);">⚠ ${r.upload.unmatched.length} file(s) couldn't be matched to a section: ${aiEsc(r.upload.unmatched.join(', '))}. Add the question number to the file name (e.g. “Q06 …”) and upload again.</div>`
                 : '';
 
             panel.innerHTML = `
@@ -1445,17 +1446,17 @@
                     <div style="display: flex; align-items: center; gap: 24px;">
                         <div style="text-align: center;">
                             <div style="font-family: var(--font-serif); font-size: 46px; line-height: 1; color: ${tone.color};">${r.score}<span style="font-size: 18px; color: var(--text-dim);">/100</span></div>
-                            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 6px;">weighted score</div>
+                            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 6px;">overall score</div>
                         </div>
                         <div>
                             <span style="display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: ${tone.label}; border: 1px solid ${tone.label}; border-radius: 6px; padding: 4px 10px;">${aiEsc(r.rating)}</span>
-                            <div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">Raw ${r.rawScore}/100 · deductions −${r.deduction} · ${r.criticalFailures} critical gap${r.criticalFailures === 1 ? '' : 's'}${docNote}</div>
-                            <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: var(--font-mono);">${aiEsc(r.model)} · ${aiEsc(scoredAt)}</div>
+                            <div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">${r.criticalFailures} serious gap${r.criticalFailures === 1 ? '' : 's'} found${docNote}</div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Scored ${aiEsc(scoredAt)}</div>
                         </div>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn" style="font-size: 12px; padding: 8px 14px;" onclick="copyAiDraft(this)">Copy draft report</button>
-                        <button class="btn" style="font-size: 12px; padding: 8px 14px; border-color: var(--accent); color: var(--accent);" onclick="logAiToGhl(this)">Log to GHL</button>
+                        <button class="btn" style="font-size: 12px; padding: 8px 14px;" onclick="copyAiDraft(this)">Copy write-up</button>
+                        <button class="btn" style="font-size: 12px; padding: 8px 14px; border-color: var(--accent); color: var(--accent);" onclick="logAiToGhl(this)">Save to client record</button>
                     </div>
                 </div>
 
@@ -1470,17 +1471,17 @@
                         <thead>
                             <tr style="text-align: left;">
                                 <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">#</th>
-                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Review area &amp; finding</th>
-                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Adq / Eff</th>
-                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Mark</th>
-                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Status</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Area &amp; finding</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Documented / Works</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Score</th>
+                                <th style="padding: 12px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Result</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
                     </table>
                 </div>
                 <div style="padding: 14px 28px; font-size: 11px; color: var(--text-dim); line-height: 1.5; border-top: 1px solid var(--border);">
-                    AI-generated against a draft AUSTRAC-aligned Chapter 6 rubric. Adequacy = control documented; Efficacy = evidence it operates. Auditor review required before any finding is issued.
+                    Each area is checked two ways — is it documented, and is there proof it actually works. Generated by the Centinl AI reviewer against AUSTRAC rules; an auditor must review before any finding is issued.
                 </div>`;
         }
 
