@@ -32,23 +32,37 @@ only small retrieved snippets go to the model. Uses BM25 lexical retrieval — n
 embeddings model, no DB, no extra API key.
 
 ## Config (`backend/.env`)
+
+### Reasoning engine (swappable — see `llm.js`)
+The brain (rubric + knowledge + retrieval + scoring math) is local and owned;
+this only picks the language model it feeds. Switch with one line — the brain
+hands any engine identical context. Set `local` to keep all data on-machine.
+
 | Var | Default | Notes |
 | --- | --- | --- |
-| `GROQ_API_KEY` | — | required |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile` | |
+| `LLM_PROVIDER` | `groq` | `groq` \| `openai` \| `anthropic` \| `local` |
+| `LLM_TIMEOUT_MS` | `60000` | per-call timeout |
+| `GROQ_API_KEY` / `GROQ_MODEL` | — / `llama-3.3-70b-versatile` | provider: groq |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` | provider: openai |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-sonnet-4-6` | provider: anthropic |
+| `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://localhost:11434/v1/chat/completions` / `llama3.1` | provider: local (Ollama/LM Studio/llama.cpp) — no key, no data leaves the machine |
+
+### Scoring budget
+| Var | Default | Notes |
+| --- | --- | --- |
 | `GROQ_MAX_TOKENS` | `4000` | output reservation; counts toward Groq TPM |
-| `RAG_DOC_CHAR_BUDGET` | `12000` | total document text/prompt (raise on a paid Groq tier) |
+| `RAG_DOC_CHAR_BUDGET` | `12000` | total document text/prompt (raise on a paid tier) |
 | `RAG_GROUND_CHARS` | `500` | AUSTRAC snippet length per area |
 
 **Free Groq tier = 12k tokens/min** (prompt + max_tokens). The defaults keep a
-full 23-area score under that. On a paid/Dev tier, raise `RAG_DOC_CHAR_BUDGET`
-and `GROQ_MAX_TOKENS` for deeper document analysis.
+full 23-area score under that. On a paid/Dev tier (or a different provider),
+raise `RAG_DOC_CHAR_BUDGET` and `GROQ_MAX_TOKENS` for deeper document analysis.
 
 ## Files
 `rubric.js` (weighted framework — **tune this**) · `ghl.js` (fetch/enrich/download) ·
 `fieldMapper.js` (fields→Q01–Q23) · `docParser.js` (PDF/Word/Excel→text) ·
 `evidence.js` (download+parse uploaded files) · `rag.js` + `ingest.js` + `knowledge/`
-(AUSTRAC grounding) · `groq.js` (LLM client) · `scorer.js` (prompt/score/report) ·
+(AUSTRAC grounding) · `llm.js` (provider-agnostic reasoning adapter — groq/openai/anthropic/local) · `groq.js` (deprecated shim → `llm.js`) · `scorer.js` (prompt/score/report) ·
 `routes.js` (router + admin auth + upload).
 
 ## Security & limits

@@ -15,7 +15,7 @@ const { groupResponses, assignUploadsToGroups } = require('./fieldMapper');
 const { attachDocuments } = require('./evidence');
 const { parseBuffer } = require('./docParser');
 const { scoreResponses } = require('./scorer');
-const { isConfigured, GROQ_MODEL, GroqError } = require('./groq');
+const { isConfigured, MODEL, PROVIDER, LlmError } = require('./llm');
 
 const router = express.Router();
 
@@ -48,7 +48,7 @@ function adminAuth(req, res, next) {
 }
 
 router.get('/health', adminAuth, (req, res) => {
-  res.json({ success: true, configured: isConfigured(), model: GROQ_MODEL });
+  res.json({ success: true, configured: isConfigured(), provider: PROVIDER, model: MODEL });
 });
 
 router.post('/score/:contactId', adminAuth, async (req, res) => {
@@ -94,7 +94,7 @@ router.post('/score/:contactId', adminAuth, async (req, res) => {
 
     // Map failure classes to honest status codes so the UI can message well.
     let status = 500;
-    if (error instanceof GroqError) {
+    if (error instanceof LlmError) {
       status = error.kind === 'timeout' ? 504 : (error.kind === 'auth' ? 503 : 502);
     } else if (/Contact not found/i.test(msg)) {
       status = 404;
@@ -138,7 +138,7 @@ router.post('/analyze-upload', adminAuth, (req, res) => {
     } catch (error) {
       const msg = error.response?.data?.error?.message || error.message;
       console.error('[rag-audit UPLOAD ERROR]:', msg);
-      const status = (error instanceof GroqError) ? (error.kind === 'timeout' ? 504 : 502) : 500;
+      const status = (error instanceof LlmError) ? (error.kind === 'timeout' ? 504 : 502) : 500;
       res.status(status).json({ success: false, message: `Analysis failed: ${msg}` });
     }
   });

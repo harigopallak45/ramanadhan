@@ -9,7 +9,7 @@ const {
   CRITICAL_DEDUCTION, CRITICAL_BLEND_THRESHOLD, ALLOWED_STATUSES,
   ratingForScore, toneForScore
 } = require('./rubric');
-const { completeJson, GROQ_MODEL } = require('./groq');
+const { completeJson, MODEL } = require('./llm');
 const { retrieve, isGrounded } = require('./rag');
 
 const PER_FIELD_CAP = 600;   // chars kept per individual answer field
@@ -217,7 +217,7 @@ function assemble(groups, modelOut, entityLabel) {
 
   return {
     entity: entityLabel,
-    model: GROQ_MODEL,
+    model: MODEL,
     scoredAt: new Date().toISOString(),
     score: finalScore,
     rawScore: Math.round(rawScore),
