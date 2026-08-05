@@ -1,8 +1,9 @@
 # Centinl — Audit Portal Backend
 
-Node.js / Express backend for the **Centinl** AUSTRAC AML/CTF s.161 independent
-review portal. It powers authentication, the auditor/admin console, the client
-portal, and the **AI compliance analyzer** (`rag-audit` module).
+Node.js / Express backend for the **Centinl** AUSTRAC AML/CTF independent
+evaluation portal (AML/CTF Amendment Act 2024 reforms, effective 31 March 2026).
+It powers authentication, the auditor/admin console, the client portal, and the
+**AI compliance analyzer** (`rag-audit` module).
 
 - **Data store:** GoHighLevel (GHL) CRM — there is no local database. Users are
   GHL contacts; audit answers and uploads are GHL custom fields; roles are GHL tags.

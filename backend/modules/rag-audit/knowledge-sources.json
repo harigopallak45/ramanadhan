@@ -31,6 +31,10 @@
     { "slug": "reform-program",               "label": "AUSTRAC Reform — AML/CTF program reform (governance, independent evaluation) [Q01/Q23]", "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform" },
     { "slug": "reform-personnel-dd-training", "label": "AUSTRAC Reform — Personnel due diligence & training [Q03/Q04/Q17]", "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/personnel-due-diligence-and-training-reform" },
     { "slug": "reform-ongoing-cdd",           "label": "AUSTRAC Reform — Ongoing customer due diligence [Q06/Q19]", "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/customer-due-diligence-reform/ongoing-customer-due-diligence-reform" },
-    { "slug": "reform-ecdd",                  "label": "AUSTRAC Reform — Enhanced customer due diligence [Q15]",    "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/customer-due-diligence-reform/enhanced-customer-due-diligence-reform" }
+    { "slug": "reform-ecdd",                  "label": "AUSTRAC Reform — Enhanced customer due diligence [Q15]",    "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/customer-due-diligence-reform/enhanced-customer-due-diligence-reform" },
+
+    { "slug": "reform-develop-program",       "label": "AUSTRAC Reform — Develop your AML/CTF program (Steps 1–4) [Q01/Q02/Q07/Q08/Q11]", "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/develop-your-amlctf-program-reform" },
+    { "slug": "reform-independent-evaluation","label": "AUSTRAC Reform — Step 5: Conduct an independent evaluation (whole program) [Q22/Q23]", "url": "https://www.austrac.gov.au/about-us/amlctf-reform/reforms-guidance/amlctf-program-reform/develop-your-amlctf-program-reform/step-5-conduct-independent-evaluation-reform" },
+    { "slug": "reform-initial-cdd",           "label": "AUSTRAC Reform — Initial customer due diligence [Q13/Q19]", "url": "https://www.austrac.gov.au/amlctf-reform/reforms-guidance/amlctf-program-reform/customer-due-diligence-reform/initial-customer-due-diligence-reform" }
   ]
 }

@@ -1,0 +1,163 @@
+/* ClientPortal — light-themed reporting-entity portal, matching the rest
+   of the app's light SaaS system throughout, including the landing hero. */
+
+.cp-root { min-height: 100vh; }
+
+/* ===================== LANDING ===================== */
+.cp-landing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: var(--font-sans);
+}
+
+.cp-landing-header {
+  padding: 28px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.cp-brand { display: flex; align-items: center; gap: 12px; }
+.cp-brand img { height: 24px; width: auto; filter: brightness(0) saturate(100%); }
+.cp-landing-tag { font-family: var(--font-mono); font-size: 11px; color: #8a8a86; }
+.cp-landing-header .cp-brand .cp-landing-tag { margin-left: 12px; opacity: 0.8; }
+
+.cp-landing-main { flex: 1; display: grid; grid-template-columns: 7fr 5fr; }
+.cp-landing-left { border-right: 1px solid rgba(0, 0, 0, 0.08); padding: 80px 60px; }
+.cp-landing-right { padding: 80px 60px; background: #fafafa; }
+
+.cp-landing-eyebrow {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #8a8a86; margin-bottom: 22px;
+}
+
+.cp-hero-title {
+  font-size: 56px; line-height: 1.08; font-weight: 600;
+  margin-bottom: 32px; color: #1a1a1a; letter-spacing: -0.025em;
+}
+.cp-hero-title em { color: var(--gold); font-style: normal; }
+.cp-hero-lead { font-size: 17px; color: #5c5c58; max-width: 520px; line-height: 1.7; margin-bottom: 48px; }
+
+.cp-enter-btn { padding: 12px 24px; min-height: 44px; }
+.cp-enter-btn:hover { transform: translateY(-1px); }
+
+.cp-landing-footnote-row {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 11px; color: #9a9a96; margin-top: 60px;
+}
+
+.cp-quote { font-size: 21px; line-height: 1.4; font-weight: 500; margin-bottom: 18px; color: #1a1a1a; }
+.cp-quote-attr { font-size: 14px; color: #6b6b68; margin-bottom: 6px; font-style: normal; }
+.cp-quote-cite { font-size: 12px; color: #9a9a96; margin-bottom: 60px; letter-spacing: 0.02em; }
+
+.cp-fact-row { border-top: 1px solid rgba(0, 0, 0, 0.08); padding: 20px 0; }
+.cp-fact-row:last-child { border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+.cp-fact-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9a96; margin-bottom: 8px; }
+.cp-fact-value { font-size: 14px; line-height: 1.5; color: #1a1a1a; font-weight: 400; }
+
+.cp-landing-footer { display: flex; flex-direction: column; padding: 40px 40px 24px; gap: 32px; }
+.cp-footer-top { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 24px; }
+.cp-footer-about { display: flex; flex-direction: column; gap: 8px; max-width: 400px; text-align: left; font-size: 13px; color: #6b6b68; }
+.cp-footer-brand { font-size: 14px; color: #1a1a1a; letter-spacing: 0.02em; }
+.cp-footer-note { color: #9a9a96; font-style: italic; margin-top: 4px; }
+.cp-footer-contact { display: flex; flex-direction: column; gap: 8px; text-align: right; font-size: 13px; color: #6b6b68; }
+.cp-footer-contact-title { color: #1a1a1a; font-size: 12px; margin-bottom: 4px; }
+.cp-footer-contact a { color: #6b6b68; text-decoration: none; }
+.cp-footer-bottom {
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08); padding-top: 24px;
+  font-family: var(--font-mono); font-size: 11px; color: #9a9a96;
+}
+
+/* ===================== PORTAL (light) ===================== */
+.cp-portal { min-height: 100vh; display: flex; flex-direction: column; }
+
+.cp-portal-header {
+  padding: 14px 32px; background: #ffffff; border-bottom: 1px solid rgba(26, 23, 20, 0.1);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(26, 23, 20, 0.06);
+}
+.cp-portal-brand { display: flex; align-items: center; gap: 24px; }
+.cp-portal-logo { height: 22px; width: auto; }
+.cp-portal-divider { height: 20px; width: 1px; background: rgba(26, 23, 20, 0.15); }
+.cp-portal-client-meta { font-family: var(--font-mono); font-size: 11px; color: #6b6560; }
+.cp-logout-btn { color: #1a1714; border-color: rgba(26, 23, 20, 0.2); padding: 6px 12px; font-size: 12px; }
+.cp-logout-btn:hover { border-color: rgba(26, 23, 20, 0.4); background: rgba(26, 23, 20, 0.04); }
+
+.cp-portal-body { flex: 1; background: #fafafa; }
+
+.cp-loading, .cp-error {
+  padding: 60px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: #999999;
+}
+.cp-error { color: #b91c1c; }
+
+.cp-unlock-banner, .cp-edit-banner, .cp-locked-banner {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  padding: 20px 32px; font-size: 13px;
+}
+.cp-unlock-banner { background: #ffffff; border-bottom: 1px solid #e0e0e0; }
+.cp-unlock-title { font-size: 20px; color: var(--gold); margin-bottom: 4px; }
+.cp-unlock-banner p { font-size: 13px; color: #555555; line-height: 1.5; max-width: 600px; margin: 0; }
+
+.cp-edit-banner { background: #fff8eb; border-bottom: 1px solid #ffe8cc; }
+.cp-edit-banner span { color: #b27a00; font-weight: 500; }
+
+.cp-locked-banner { display: block; background: #ffffff; border-bottom: 1px solid #e0e0e0; }
+.cp-locked-title { font-size: 20px; color: #10b981; margin-bottom: 4px; }
+.cp-locked-banner p { font-size: 13px; color: #666666; line-height: 1.5; margin: 0; }
+
+/* ── intake form ── */
+.cp-intake { max-width: 760px; margin: 0 auto; padding: 36px 32px 80px; }
+.cp-intake-head { margin-bottom: 28px; }
+.cp-intake-head h2 { font-size: 24px; color: #111111; margin-bottom: 6px; }
+.cp-intake-head p { font-size: 13.5px; color: #666666; line-height: 1.5; max-width: 560px; }
+
+.cp-progress-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.cp-progress-row .progress { flex: 1; background: #eeeeee; }
+.cp-progress-label { font-family: var(--font-mono); font-size: 11.5px; color: #888888; white-space: nowrap; }
+
+.cp-section { margin-bottom: 34px; }
+.cp-section-label {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #a89f8e; margin-bottom: 14px;
+}
+
+.cp-qcard { background: #ffffff; border: 1px solid #ececec; padding: 18px 20px; margin-bottom: 10px; }
+.cp-qcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.cp-qcard-id-row { display: flex; align-items: center; gap: 8px; }
+.cp-qcard-id { font-family: var(--font-mono); font-size: 10.5px; color: #aaaaaa; }
+.cp-qdot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.cp-qdot--answered { background: #0f9d58; }
+.cp-qdot--critical { background: #c94b3f; }
+.cp-qdot--empty { background: #dddddd; }
+.cp-qcard-title { font-size: 14.5px; font-weight: 500; color: #111111; margin-bottom: 4px; }
+.cp-qcard-hint { font-size: 12px; color: #999999; line-height: 1.45; margin-bottom: 12px; }
+
+/* Per-sub-field inputs (text/file/radio/etc.) now live in the shared
+   QuestionAnswerFields component (qf-* classes) — see components/. */
+
+.cp-submit-row { margin-top: 12px; padding-top: 24px; border-top: 1px solid #eeeeee; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.cp-submit-hint { font-size: 12.5px; color: #999999; margin: 0; text-align: right; max-width: 420px; }
+
+/* ── responsive ── */
+@media (max-width: 1100px) {
+  .cp-landing-main { grid-template-columns: 1fr; }
+  .cp-landing-left { border-right: none; border-bottom: 1px solid rgba(0, 0, 0, 0.08); padding: 60px 24px; }
+  .cp-landing-right { padding: 60px 24px; }
+  .cp-hero-title { font-size: 38px; }
+  .cp-hero-lead { font-size: 16px; }
+}
+
+@media (max-width: 600px) {
+  .cp-landing-header { padding: 24px 20px; flex-direction: column; gap: 16px; align-items: center; text-align: center; }
+  .cp-landing-left, .cp-landing-right { padding: 48px 24px; }
+  .cp-landing-footer { padding: 24px 20px; }
+  .cp-portal-header { padding: 12px 16px; flex-wrap: wrap; gap: 12px; }
+  .cp-portal-brand { gap: 10px; width: 100%; justify-content: space-between; }
+  .cp-portal-divider { display: none; }
+  .cp-portal-client-meta { display: none; }
+  .cp-intake { padding: 24px 16px 60px; }
+}

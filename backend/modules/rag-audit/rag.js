@@ -102,4 +102,23 @@ function retrieve(query, k = 2) {
   return scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, k);
 }
 
-module.exports = { buildIndex, saveIndex, loadIndex, retrieve, isGrounded, tokenize, chunkText, INDEX_PATH };
+// The knowledge base intentionally mixes genuine AUSTRAC legislation/guidance
+// with real CLIENT work-product (compliance programs, review-request
+// letters) and the auditor's own blank templates — ingested so the model has
+// real-world examples to reason about. That's fine for general context, but
+// NEVER acceptable as a citable "regulatory basis": citing a client's own
+// document, or another client's letter, as if it were the law is a citation-
+// integrity failure, not a minor labelling slip. This allowlists source
+// filenames that are actually legislation/guidance/typology reference
+// material, and is the ONLY retrieval path anything citation-facing should
+// use (scorer.js's live findings, fullReport.js's "Regulatory basis" line).
+const REGULATORY_SOURCE_RE = /^(guid-|reform-|amlctf-act|amlctf-amendment|AUSTRAC_|AMLCO_|Reference_|Training_AUSTRAC)/i;
+
+function retrieveRegulatory(query, k = 2) {
+  // Over-fetch from the full BM25 ranking, then filter down to citation-
+  // eligible sources — a lower-ranked genuine regulation should still beat a
+  // higher-ranked client document that merely shares more keywords.
+  return retrieve(query, Math.max(k * 6, 12)).filter(h => REGULATORY_SOURCE_RE.test(h.source)).slice(0, k);
+}
+
+module.exports = { buildIndex, saveIndex, loadIndex, retrieve, retrieveRegulatory, isGrounded, tokenize, chunkText, INDEX_PATH };

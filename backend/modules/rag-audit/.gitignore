@@ -1,2 +1,14 @@
 # Generated BM25 retrieval index (rebuilt by `npm run rag:ingest` / `rag:fetch`)
 knowledge-index.json
+
+# Admin-editable question bank — runtime state, seeded from rubric.js on
+# first boot then owned by the admin. Never overwrite with a code deploy.
+questions.json
+
+# Original filenames for uploaded evidence, keyed by GHL media URL — runtime
+# state, not code.
+file-names.json
+
+# Cached GHL field id/key for the per-client question-assignment field —
+# provisioned once at runtime on first use, not code.
+assignments-field.json

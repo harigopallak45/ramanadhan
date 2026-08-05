@@ -1,0 +1,37 @@
+/* A question can carry several real sub-fields (e.g. name + certification +
+   CV upload) — each gets its own row, visually grouped together. Shared by
+   the client intake form and the admin's per-client edit view. */
+.qf-fields { display: flex; flex-direction: column; gap: 14px; }
+.qf-subfield + .qf-subfield { padding-top: 14px; border-top: 1px solid var(--border); }
+.qf-subfield-label { font-size: 12.5px; font-weight: 500; color: var(--text-dim); margin-bottom: 6px; }
+.qf-saved { font-family: var(--font-mono); font-size: 10.5px; color: var(--success); margin-left: 8px; }
+
+.qf-readonly-value { font-size: 13.5px; color: var(--text-main); line-height: 1.5; white-space: pre-wrap; }
+.qf-readonly-empty { font-size: 13px; color: var(--text-faint); }
+
+.qf-radio-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.qf-radio-option { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--text-main); cursor: pointer; }
+
+.qf-file-picker {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm); font-size: 12.5px; color: var(--text-main);
+  cursor: pointer; background: var(--surface);
+}
+.qf-file-picker input { display: none; }
+
+.qf-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.qf-file-chip {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px 3px 3px 10px;
+  background: var(--surface-2); border-radius: var(--r-sm); font-size: 11.5px; color: var(--text-dim);
+  font-family: var(--font-sans);
+}
+.qf-file-chip:hover { background: var(--surface-hover); }
+.qf-file-chip-name {
+  background: none; border: none; padding: 2px 0; color: inherit; font: inherit; cursor: pointer;
+}
+.qf-file-chip-remove {
+  background: none; border: none; cursor: pointer; color: var(--text-faint); font-size: 11px;
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+}
+.qf-file-chip-remove:hover:not(:disabled) { background: var(--danger-wash); color: var(--danger); }
+.qf-file-chip-remove:disabled { opacity: 0.5; cursor: default; }

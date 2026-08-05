@@ -1,10 +1,25 @@
 // =====================================================================
-// Maps enriched GHL custom fields onto the 23 review areas (Q01–Q23).
+// Maps enriched GHL custom fields onto the live evidence areas (the
+// built-in Q01–Q23 PLUS any questions the admin has added since).
 // This is the server-side twin of resolveFieldInfo() in the frontend
 // (entity.html / audit.html) so scoring uses the SAME mapping the auditor
 // sees on screen.
+//
+// Two resolution paths, by design:
+//   - EXACT: a question with a provisioned GHL `fieldId` (any admin-added
+//     question, and any built-in the admin has since pinned) matches its
+//     field by id — no guessing.
+//   - FUZZY: the original 23 built-ins still resolve via the historical
+//     title/keyword matcher below, because real client data already lives
+//     in GHL fields that predate this app and were never renamed to match
+//     cleanly. This path is intentionally left untouched.
 // =====================================================================
-const { RUBRIC } = require('./rubric');
+const questionBank = require('./questionBank');
+const fileNames = require('./fileNames');
+
+// Always read the LIVE list — admin edits must take effect on the very
+// next request, not after a restart.
+function activeQuestions() { return questionBank.listActive(); }
 
 // Generic GHL/CRM field names that must NEVER be treated as audit evidence,
 // even though they contain a keyword (e.g. "Employee count" vs the audit's
@@ -28,19 +43,21 @@ function hasWord(haystack, word) {
 function resolveQId(name) {
   const clean = String(name || '').trim();
   const lower = clean.toLowerCase();
+  const known = new Set(activeQuestions().map(q => q.id));
 
-  // 1. Explicit Q01–Q23 prefix (this is what real audit fields use)
-  const qMatch = clean.match(/Q(?:uestion)?\s*(\d+)/i);
+  // 1. Explicit Qxx prefix, for any question that actually exists (built-in
+  //    or admin-added) — this is what real audit fields use.
+  const qMatch = clean.match(/Q(?:uestion)?\s*0*(\d+)/i);
   if (qMatch) {
-    const num = parseInt(qMatch[1], 10);
-    if (num >= 1 && num <= 23) return 'Q' + String(num).padStart(2, '0');
+    const id = 'Q' + String(parseInt(qMatch[1], 10)).padStart(2, '0');
+    if (known.has(id)) return id;
   }
 
   // Known generic CRM fields never count as audit evidence.
   if (GENERIC_FIELDS.has(lower)) return 'Q00';
 
-  // 2. Semantic title match against the rubric
-  const spec = RUBRIC.find(s => {
+  // 2. Semantic title match against the live question list
+  const spec = activeQuestions().find(s => {
     const t = s.title.toLowerCase();
     return lower.includes(t) || t.includes(lower) ||
       t.replace('and', '&').includes(lower.replace('and', '&')) ||
@@ -123,21 +140,27 @@ function scoreAgainst(haystack, kwList) {
 }
 
 // Classify one uploaded document to a review area from its filename + contents.
-// Returns 'Q01'..'Q23', or 'Q00' if nothing scores high enough (genuinely unmatched).
+// Returns a Qxx id, or 'Q00' if nothing scores high enough (genuinely unmatched).
 function classifyUpload(name = '', text = '') {
+  const known = new Set(activeQuestions().map(q => q.id));
+
   // 1. An explicit Qxx in the filename always wins — the auditor named it on purpose.
   const explicit = String(name).match(/Q(?:uestion)?\s*0*(\d+)/i);
   if (explicit) {
-    const n = parseInt(explicit[1], 10);
-    if (n >= 1 && n <= 23) return 'Q' + String(n).padStart(2, '0');
+    const id = 'Q' + String(parseInt(explicit[1], 10)).padStart(2, '0');
+    if (known.has(id)) return id;
   }
-  // 2. Score the contents (and filename, weighted 2×) against every area.
+  // 2. Score the contents (and filename, weighted 2×) against every area. The
+  //    static CONTENT_KW table covers the 23 built-ins; admin-added questions
+  //    contribute their own `keywords` at equal weight (2 = "distinctive word").
   const fname = String(name).toLowerCase();
   const body = String(text).toLowerCase().slice(0, 8000);
   let best = 'Q00', bestScore = 0;
-  for (const qid of Object.keys(CONTENT_KW)) {
-    const score = scoreAgainst(fname, CONTENT_KW[qid]) * 2 + scoreAgainst(body, CONTENT_KW[qid]);
-    if (score > bestScore) { bestScore = score; best = qid; }
+  for (const q of activeQuestions()) {
+    const table = CONTENT_KW[q.id] || (q.keywords || []).map(k => [String(k).toLowerCase(), 2]);
+    if (!table.length) continue;
+    const score = scoreAgainst(fname, table) * 2 + scoreAgainst(body, table);
+    if (score > bestScore) { bestScore = score; best = q.id; }
   }
   // 3. Require a minimum of one strong phrase (or a couple of weak hits) to assign.
   return bestScore >= 3 ? best : 'Q00';
@@ -147,39 +170,77 @@ function looksLikeFile(field) {
   if (field.fileUrl) return true;
   if (field.dataType === 'FILE_UPLOAD') return true;
   const v = String(field.value || '').toLowerCase();
-  return v.includes('http') && (
-    v.includes('/documents/download/') ||
-    /\.(pdf|jpe?g|png|webp|gif|csv|xlsx?|docx?|zip)\b/.test(v)
-  );
+  if (!v.includes('http')) return false;
+  return v.includes('/documents/download/') ||
+    // Our own evidence-upload endpoint stores files on GHL's asset CDN —
+    // any URL there is evidence regardless of extension.
+    v.includes('filesafe.space') ||
+    /\.(pdf|jpe?g|png|webp|gif|csv|xlsx?|docx?|doc|txt|rtf|zip)\b/.test(v);
 }
 
-// Group enriched fields into one bucket per review area.
-// Returns: { Q01: { id, section, title, weight, critical, answers:[str], files:[{name,url}] }, ... }
+// Group enriched fields into one bucket per review area. Each question may
+// now map to SEVERAL real GHL fields (fields[] — e.g. Q08 = AMLCO name +
+// certification + CV upload), so resolution is exact-id only: every active
+// question's fields[].ghlFieldId is known up front (Sentinel built-ins) or
+// was provisioned on first use (admin-added questions) — no more fuzzy name
+// guessing for the structured intake path (fuzzy matching stays in
+// resolveQId/classifyUpload below, which serve the auditor's separate
+// free-form "upload & analyze" flow).
+// Returns: { Q01: { id, section, title, weight, critical,
+//   fields: [{ key, label, inputType, options, value, files:[{name,url}] }],
+//   answers:[str], files:[{name,url}] } }  — answers/files are a flattened
+// view across all sub-fields, kept for scorer.js's existing prompt assembly.
 function groupResponses(fields) {
+  const specs = activeQuestions();
   const groups = {};
-  for (const spec of RUBRIC) {
+  const byFieldId = new Map(); // ghlFieldId -> { qId, subKey }
+
+  for (const spec of specs) {
+    const subFields = (spec.fields || []).map(f => ({
+      key: f.key, label: f.label, inputType: f.inputType, options: f.options || null,
+      value: '', files: []
+    }));
     groups[spec.id] = {
       id: spec.id, section: spec.section, title: spec.title,
       weight: spec.weight, critical: spec.critical,
       adequacy: spec.adequacy, efficacy: spec.efficacy,
+      fields: subFields,
       answers: [], files: []
     };
+    for (const f of (spec.fields || [])) {
+      if (f.ghlFieldId) byFieldId.set(f.ghlFieldId, { qId: spec.id, subKey: f.key });
+    }
   }
 
   for (const f of fields) {
-    const qId = resolveQId(f.name);
-    if (!groups[qId]) continue; // drops Q00 / unmapped general profile noise
+    const hit = byFieldId.get(f.id);
+    if (!hit) continue; // no match to any active question's sub-field
+    const group = groups[hit.qId];
+    const subField = group.fields.find(sf => sf.key === hit.subKey);
+    if (!subField) continue;
 
-    if (looksLikeFile(f)) {
-      const urls = (f.fileUrls && f.fileUrls.length) ? f.fileUrls : [f.fileUrl || f.value];
-      const meta = f.fileMeta || {};
-      urls.forEach(u => groups[qId].files.push({
-        name: f.name, url: u,
-        originalName: meta.originalname || '',
-        mimetype: meta.mimetype || ''
-      }));
+    if (subField.inputType === 'file' || looksLikeFile(f)) {
+      // Prefer fileEntries — each file paired with ITS OWN meta, so a field
+      // with several files doesn't have every file show the first file's
+      // name. Fall back to plain fileUrls (no per-file meta available) or a
+      // regex pull from a joined string (our older LARGE_TEXT evidence trick).
+      let entries = (f.fileEntries && f.fileEntries.length)
+        ? f.fileEntries
+        : ((f.fileUrls && f.fileUrls.length) ? f.fileUrls : [f.fileUrl]).filter(Boolean).map(u => ({ url: u, meta: {} }));
+      if (!entries.length) entries = (String(f.value || '').match(/https?:\/\/\S+/g) || []).map(u => ({ url: u, meta: {} }));
+      entries.forEach(({ url: u, meta }) => {
+        // GHL's own per-file metadata first (native to uploads made through
+        // the dedicated custom-field upload endpoint); our local fileNames.js
+        // sidecar next (covers legacy plain-URL-array uploads with no meta
+        // at all); the raw GHL field name (e.g. "Q01_program_files") last.
+        const originalName = (meta && meta.originalname) || fileNames.get(u) || '';
+        const entry = { name: f.name, url: u, originalName, mimetype: (meta && meta.mimetype) || '' };
+        subField.files.push(entry);
+        group.files.push(entry);
+      });
     } else if (String(f.value || '').trim() !== '') {
-      groups[qId].answers.push(`${f.name}: ${String(f.value).trim()}`);
+      subField.value = String(f.value).trim();
+      group.answers.push(`${subField.label}: ${subField.value}`);
     }
   }
   return groups;
@@ -188,7 +249,7 @@ function groupResponses(fields) {
 // Build an empty group skeleton (one bucket per review area).
 function emptyGroups() {
   const groups = {};
-  for (const spec of RUBRIC) {
+  for (const spec of activeQuestions()) {
     groups[spec.id] = {
       id: spec.id, section: spec.section, title: spec.title,
       weight: spec.weight, critical: spec.critical,

@@ -30,10 +30,10 @@ Thumbs.db
 *~
 
 # Client documents & confidential evidence (never commit)
-backend/modules/OneDrive_*/
-backend/modules/additional/
+backend/knowledge-sources/
 
 # Generated reports (may contain client data)
+backend/reports/
 Centinl_*.pdf
 
 # Runtime

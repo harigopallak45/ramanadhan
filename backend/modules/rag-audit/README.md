@@ -1,9 +1,11 @@
 # rag-audit — AI AML/CTF Compliance Analyzer
 
-AI layer for the Centinl AUSTRAC AML/CTF s.161 independent review portal.
+AI layer for the Centinl AUSTRAC AML/CTF **independent evaluation** portal (aligned
+to the AML/CTF Amendment Act 2024 reforms, effective 31 March 2026 — the new
+whole-program independent evaluation that replaces the old s.161 Part A review).
 Reads an entity's survey answers **and the contents of their uploaded documents**,
 grounds its judgement in **your AUSTRAC reference material**, scores each of the
-23 review areas on adequacy + efficacy against the weighted Chapter 6 rubric, and
+23 evidence areas on adequacy + efficacy against the weighted reform rubric, and
 returns a 0–100 score plus a draft findings report for the auditor.
 
 Auto-mounted by `server.js` at `/api/rag-audit` and `/hlgp/api/rag-audit`.

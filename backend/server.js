@@ -6,6 +6,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
+// Reused for server-side completeness checking on submit (never trust a
+// client-reported "I answered everything" — recompute it from real GHL data).
+const { getEnrichedContact: raGetEnrichedContact, updateContactFields: raUpdateContactFields } = require('./modules/rag-audit/ghl');
+const { groupResponses: raGroupResponses } = require('./modules/rag-audit/fieldMapper');
+const raQuestionBank = require('./modules/rag-audit/questionBank');
+const raAssignments = require('./modules/rag-audit/assignments');
+const { RRS_META_FIELDS } = require('./modules/rag-audit/sentinelFields');
 
 const app = express();
 
@@ -37,8 +44,11 @@ app.use((req, res, next) => {
 
 // Production Page Redirect Middleware
 app.use((req, res, next) => {
-    // Check if the frontend folder/files actually exist on disk
-    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/auth.html'));
+    // Check if a built React frontend exists on disk (frontend/ is now a Vite
+    // app; `npm run build` produces frontend/dist/index.html — combined
+    // deployments always have this, so this fallback only fires if the
+    // backend was deployed without ever building the frontend).
+    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/dist/index.html'));
 
     if (!frontendExists) {
         const path = req.path.toLowerCase();
@@ -76,10 +86,13 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files
-app.use('/hlgp', express.static(path.join(__dirname, '../frontend')));
-app.use('/audit', express.static(path.join(__dirname, '../frontend')));
-app.use(express.static(path.join(__dirname, '../frontend')));
+// Serve the built React app's static assets (frontend/dist, produced by
+// `npm run build` in frontend/). The SPA catch-all further down serves
+// index.html for any soft route (/admin, /entity/:id, etc.) that isn't a
+// real file here — React Router takes it from there.
+app.use('/hlgp', express.static(path.join(__dirname, '../frontend/dist')));
+app.use('/audit', express.static(path.join(__dirname, '../frontend/dist')));
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 const PORT = process.env.PORT || 5001;
 const GHL_API_KEY = process.env.GHL_API_KEY;
@@ -472,36 +485,27 @@ app.post(['/api/reset-password', '/hlgp/api/reset-password'], async (req, res) =
     }
 });
 
-app.get(/.*\/(reset-password|reset)(\.html)?\/?$/, (req, res) => {
+app.get(/.*\/(reset-password|reset)(\.html)?\/?$/, (req, res, next) => {
     const token = req.query.token;
-    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/reset-password.html'));
+    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/dist/index.html'));
 
     if (!frontendExists) {
         if (!token) {
             return res.status(400).send('Invalid or missing token.');
         }
         try {
-            // Verify the token
             jwt.verify(token, JWT_SECRET);
-            
-            // Redirect to frontend reset page
             const frontendUrl = 'https://austrac.amlcompliance.com.au';
             return res.redirect(302, `${frontendUrl}/audit/reset?token=${encodeURIComponent(token)}`);
         } catch (err) {
             return res.status(400).send('This secure link has expired or is invalid.');
         }
-    } else {
-        // Local dev: serve the local reset-password.html file
-        return res.sendFile(path.join(__dirname, '../frontend/reset-password.html'));
     }
+    // Frontend is built and combined with this server — hand off to the SPA
+    // catch-all below; React Router's /reset-password route reads ?token=
+    // itself, matching what the reset-password email link points to.
+    next();
 });
-
-// Direct Page Routes
-app.get(['/', '/hlgp', '/v2', '/audit/login'], (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
-// Leave the base routes to fall through to the regex matching to enforce auth middlewares
-
-// Regex Fallbacks
-app.get(/.*\/(auth|login-page)(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
 
 // Client Role Middleware
 const clientAuth = (req, res, next) => {
@@ -532,10 +536,9 @@ const adminUIAuth = (req, res, next) => {
     }
 };
 
-// Page Routes — auth is enforced client-side by each page's own JS check
-app.get(/.*\/audit(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/audit.html')));
-app.get(/.*\/admin(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/admin.html')));
-app.get(/.*\/entity(\.html)?\/?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/entity.html')));
+// Page routes are now handled entirely by the React app's own router — see
+// the SPA catch-all registered at the very end of this file, after every
+// /api/* route. Auth is enforced client-side (ProtectedRoute) same as before.
 
 // Public: Get Backend Config
 app.get(['/api/config', '/hlgp/api/config'], (req, res) => {
@@ -612,7 +615,11 @@ app.get(['/api/admin/users', '/hlgp/api/admin/users'], adminAuth, async (req, re
         const formattedUsers = auditUsers.map(u => {
             const tags = (u.tags || []).map(t => String(t).toLowerCase().trim());
             const isAdmin = tags.includes(adminTag) || tags.includes(adminTag.replace(' ', '-'));
-            let status = isAdmin ? 'Admin' : (tags.includes('audit submitted') ? 'Completed' : 'In Progress');
+            let status = isAdmin
+                ? 'Admin'
+                : (tags.includes('audit submitted')
+                    ? (tags.includes('audit submitted partial') ? 'Partial' : 'Completed')
+                    : 'In Progress');
 
             return {
                 id: u.id,
@@ -893,7 +900,7 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
 
 // Admin: Invite New User
 app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req, res) => {
-    const { firstName, lastName, email, company } = req.body;
+    const { firstName, lastName, email, company, role } = req.body; // role: 'admin' | 'client' (default)
     if (!email || !firstName) return res.status(400).json({ success: false, message: 'Name and Email are required' });
 
     try {
@@ -930,15 +937,17 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
         });
         const currentTags = getRes.data.contact.tags || [];
 
-        // 5. Update contact with URL and Invite Tag
+        // 5. Update contact with URL, role tag, and Invite Tag
         const userTag = (process.env.GHL_USER_TAG || 'audit user').toLowerCase().trim();
-        
+        const adminTag = (process.env.GHL_ADMIN_TAG || 'audit admin').toLowerCase().trim();
+        const roleTag = role === 'admin' ? adminTag : userTag;
+
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
             customFields: [
                 { id: RESET_URL_FIELD_ID, value: inviteUrl },
                 { id: INVITE_LINK_FIELD_ID, value: inviteUrl }
             ],
-            tags: modifyTags(currentTags, { add: [userTag, 'audit invite triggered'] })
+            tags: modifyTags(currentTags, { add: [roleTag, 'audit invite triggered'] })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -1019,11 +1028,13 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
             }
         }
 
-        res.json({ 
-            success: true, 
-            message: apiEmailSent 
-                ? 'Invite created and email delivered successfully via GHL Conversations API!' 
-                : 'Invite created. GHL contact card updated.' 
+        res.json({
+            success: true,
+            message: apiEmailSent
+                ? 'Invite created and email delivered successfully via GHL Conversations API!'
+                : 'Invite created. GHL contact card updated.',
+            contactId,
+            role: role === 'admin' ? 'admin' : 'client'
         });
     } catch (error) {
         console.error('[INVITE ERROR]:', error.response?.data || error.message);
@@ -1080,12 +1091,14 @@ app.post(['/api/admin/users/:id/edit-permission', '/hlgp/api/admin/users/:id/edi
         const contact = response.data.contact;
         if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
 
-        const editTag = 'edit permission granted';
+        const lockTag = 'editing locked';
 
-        // Preserve every existing tag; only toggle the edit-permission tag
-        const tags = action === 'unlock'
-            ? modifyTags(contact.tags, { add: [editTag] })
-            : modifyTags(contact.tags, { remove: [editTag] });
+        // Editing is open by default, for a client at ANY submission stage —
+        // locking is now only ever an explicit admin action, never automatic
+        // on submit. Preserve every existing tag; only toggle this one.
+        const tags = action === 'lock'
+            ? modifyTags(contact.tags, { add: [lockTag] })
+            : modifyTags(contact.tags, { remove: [lockTag] });
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
             tags
@@ -1134,13 +1147,18 @@ app.get(['/api/client/profile', '/hlgp/api/client/profile'], verifyClientToken, 
         const contact = enrichAndFilterContact(response.data.contact);
         const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
         const done = tags.includes('audit submitted') || tags.includes('audit-submitted');
-        const editingUnlocked = tags.includes('edit permission granted');
+        const isPartial = tags.includes('audit submitted partial');
+        // Editing is open by default at ANY submission stage — submitting
+        // (partial or complete) never locks the portal on its own. The ONLY
+        // thing that locks a client out is an explicit admin action.
+        const editingLocked = tags.includes('editing locked');
 
-        res.json({ 
-            success: true, 
-            contact, 
-            done, 
-            editingUnlocked 
+        res.json({
+            success: true,
+            contact,
+            done,
+            isPartial,
+            editingLocked
         });
     } catch (error) {
         console.error('[CLIENT PROFILE ERROR]:', error.response?.data || error.message);
@@ -1156,10 +1174,37 @@ app.post(['/api/client/submit', '/hlgp/api/client/submit'], verifyClientToken, a
         });
         const contact = response.data.contact;
 
-        // Mark as submitted and revoke editing; preserve every other tag
+        // Recompute completeness ourselves from real GHL data — never trust
+        // a client-reported "I'm done" flag. A client is always allowed to
+        // submit early with partial answers; we just tag it honestly so the
+        // auditor knows at a glance whether to expect gaps.
+        let completeness = null;
+        try {
+            const { fields } = await raGetEnrichedContact(req.user.id);
+            const fieldId = raAssignments.peekAssignmentFieldId();
+            const assignedIds = fieldId
+                ? raAssignments.parseAssignedIds(fields.find(f => f.id === fieldId)?.value)
+                : null;
+            const groups = raGroupResponses(fields);
+            const active = raQuestionBank.listActive(assignedIds);
+            const answered = active.filter(q => {
+                const g = groups[q.id];
+                return g && (g.answers.length || g.files.length);
+            }).length;
+            completeness = { answered, total: active.length, isPartial: active.length > 0 && answered < active.length };
+        } catch (e) {
+            console.warn('[CLIENT SUBMIT] Completeness check failed, submitting without a partial/complete tag:', e.message);
+        }
+
+        // Mark as submitted; preserve every other tag, including any admin
+        // lock state — submitting never changes whether editing is locked,
+        // that's a separate, explicit admin decision. Always strip any stale
+        // partial tag first — modifyTags removes before it adds, so
+        // re-adding it below (only if still partial) reflects THIS
+        // submission, not a previous one.
         const tags = modifyTags(contact.tags, {
-            add: ['audit submitted'],
-            remove: ['edit permission granted']
+            add: completeness?.isPartial ? ['audit submitted', 'audit submitted partial'] : ['audit submitted'],
+            remove: ['audit submitted partial']
         });
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
@@ -1168,13 +1213,39 @@ app.post(['/api/client/submit', '/hlgp/api/client/submit'], verifyClientToken, a
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
+        // Mirror the same state into the Sentinel rrs metadata fields so an
+        // admin browsing GHL directly (outside this app) sees it too.
+        if (completeness) {
+            try {
+                const pct = completeness.total ? Math.round((completeness.answered / completeness.total) * 100) : 0;
+                await raUpdateContactFields(req.user.id, [
+                    { id: RRS_META_FIELDS.submittedAt.ghlFieldId, value: new Date().toISOString() },
+                    { id: RRS_META_FIELDS.completionPct.ghlFieldId, value: pct },
+                    { id: RRS_META_FIELDS.status.ghlFieldId, value: completeness.isPartial ? 'In Progress' : 'Submitted' }
+                ]);
+            } catch (e) {
+                console.warn('[CLIENT SUBMIT] Failed to write RRS metadata fields:', e.response?.data?.message || e.message);
+            }
+        }
+
+        const noteBody = completeness
+            ? (completeness.isPartial
+                ? `Portal Activity Log: Client submitted a PARTIAL review statement (${completeness.answered}/${completeness.total} answered).`
+                : `Portal Activity Log: Client finalized and submitted the independent review statement (${completeness.answered}/${completeness.total} answered).`)
+            : `Portal Activity Log: Client finalized and submitted the independent review statement.`;
         await axios.post(`https://services.leadconnectorhq.com/contacts/${req.user.id}/notes`, {
-            body: `Portal Activity Log: Client finalized and submitted the independent review statement.`
+            body: noteBody
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
-        res.json({ success: true, message: 'Audit statement submitted successfully.' });
+        res.json({
+            success: true,
+            message: completeness?.isPartial
+                ? `Submitted with ${completeness.answered}/${completeness.total} answered — the rest will show as outstanding to your auditor.`
+                : 'Audit statement submitted successfully.',
+            completeness
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -1231,6 +1302,20 @@ app.get(['/api/modules', '/hlgp/api/modules'], (req, res) => {
         });
     }
     res.json({ success: true, modules: activeModules });
+});
+
+// SPA catch-all — MUST be the last route registered. Any GET that isn't an
+// API call and doesn't match a real static asset (already handled by
+// express.static above) falls through to here and gets the React app's
+// index.html; React Router resolves the actual page client-side. This is
+// what "combines" frontend and backend into one Express process/deploy.
+app.get(/.*/, (req, res, next) => {
+    if (req.path.includes('/api/')) return next();
+    const indexPath = path.join(__dirname, '../frontend/dist/index.html');
+    if (!fs.existsSync(indexPath)) {
+        return res.status(503).send('Frontend not built. Run `npm run build` in the frontend/ directory.');
+    }
+    res.sendFile(indexPath);
 });
 
 app.listen(PORT, () => console.log(`🚀 Audit Portal Backend running on port ${PORT}`));
