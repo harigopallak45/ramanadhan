@@ -353,7 +353,7 @@ router.post('/questions', adminAuth, async (req, res) => {
 router.put('/questions/:id', adminAuth, async (req, res) => {
   try {
     const patch = { ...req.body };
-    delete patch.id; delete patch.builtin; // server-owned
+    delete patch.id; delete patch.builtin; delete patch.weight; // server-owned — every question weighs 1
 
     // A submitted `inputType` only makes sense as an edit for a genuinely
     // single-field question not yet provisioned in GHL — translate it onto

@@ -12,7 +12,7 @@ import './AdminDashboard.css';
 
 const NAV_TABS = [{ to: '/admin', label: 'Clients' }, { to: '/questions', label: 'Question Builder' }];
 const EMPTY_INVITE = { firstName: '', lastName: '', email: '', company: '', role: 'client' };
-const EMPTY_NEW_QUESTION = { section: '', title: '', weight: 2, adequacy: '', efficacy: '', inputType: 'file', critical: false };
+const EMPTY_NEW_QUESTION = { section: '', title: '', adequacy: '', efficacy: '', inputType: 'file', critical: false };
 const EMPTY_SCORECARD = { open: false, contactId: null, name: '', result: null, loading: false, error: '', reportOpen: false };
 
 function statusTone(status) {
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
     if (!ok) return;
     setSavingNewQ(true);
     try {
-      const payload = { ...newQForm, weight: Number(newQForm.weight), keywords: [] };
+      const payload = { ...newQForm, keywords: [] };
       const d = await ragApi.addQuestion(payload);
       setInviteQuestions((qs) => [...qs, d.question]);
       setSelectedQIds((ids) => [...ids, d.question.id]); // auto-include it for this invite
@@ -456,7 +456,7 @@ function closeInviteModal() {
                             <input type="checkbox" checked={selectedQIds.includes(q.id)} onChange={() => toggleQuestionId(q.id)} />
                             <div>
                               <div className="ad-question-picker-row-title">{q.title}</div>
-                              <div className="ad-question-picker-row-meta">{q.id} · weight {q.weight}{q.critical ? ' · critical' : ''}</div>
+                              <div className="ad-question-picker-row-meta">{q.id}{q.critical ? ' · critical' : ''}</div>
                             </div>
                           </label>
                         ))}
@@ -470,10 +470,7 @@ function closeInviteModal() {
                       </button>
                     ) : (
                       <div className="ad-add-question-form">
-                        <div className="ad-add-question-row">
-                          <TextInput placeholder="Section (e.g. Step 2: Risk Assessment)" value={newQForm.section} onChange={(e) => setNewQForm({ ...newQForm, section: e.target.value })} />
-                          <TextInput type="number" min={0} max={100} step={0.5} placeholder="Weight" value={newQForm.weight} onChange={(e) => setNewQForm({ ...newQForm, weight: e.target.value })} />
-                        </div>
+                        <TextInput placeholder="Section (e.g. Step 2: Risk Assessment)" value={newQForm.section} onChange={(e) => setNewQForm({ ...newQForm, section: e.target.value })} />
                         <TextInput placeholder="Question title — what the client sees" value={newQForm.title} onChange={(e) => setNewQForm({ ...newQForm, title: e.target.value })} />
                         <TextArea placeholder="What counts as a good answer?" value={newQForm.adequacy} onChange={(e) => setNewQForm({ ...newQForm, adequacy: e.target.value })} />
                         <div className="ad-add-question-row">

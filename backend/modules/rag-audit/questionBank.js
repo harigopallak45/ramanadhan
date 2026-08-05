@@ -52,7 +52,7 @@ function seedDefaults() {
     id: q.id,
     section: q.section,
     title: q.title,
-    weight: q.weight,
+    weight: 1, // every question counts equally — no per-question materiality weighting
     critical: !!q.critical,
     adequacy: q.adequacy,
     efficacy: q.efficacy,
@@ -86,6 +86,20 @@ function migrateToFieldsSchema(list) {
   return { migrated, changed };
 }
 
+// One-time: every question counts equally now — no more per-question
+// materiality weight to keep summed to 100. Existing questions.json still
+// has the old varied weights (9, 2, 5, ...) from before this decision;
+// normalise them all to 1 so old and newly-added questions score the same way.
+function migrateWeights(list) {
+  let changed = false;
+  const migrated = list.map(q => {
+    if (q.weight === 1) return q;
+    changed = true;
+    return { ...q, weight: 1 };
+  });
+  return { migrated, changed };
+}
+
 function load() {
   if (!fs.existsSync(STORE_PATH)) {
     const seeded = seedDefaults();
@@ -95,12 +109,19 @@ function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     if (!Array.isArray(raw) || !raw.length) throw new Error('empty store');
-    const { migrated, changed } = migrateToFieldsSchema(raw);
-    if (changed) {
+    let list = raw;
+    const fieldsMigration = migrateToFieldsSchema(list);
+    if (fieldsMigration.changed) {
       console.log('[questionBank] Upgraded questions.json to the fields[] schema (Sentinel rrs mapping applied).');
-      save(migrated);
+      list = fieldsMigration.migrated;
     }
-    return migrated;
+    const weightMigration = migrateWeights(list);
+    if (weightMigration.changed) {
+      console.log('[questionBank] Normalised all question weights to 1 (equal weighting, no more weight system).');
+      list = weightMigration.migrated;
+    }
+    if (fieldsMigration.changed || weightMigration.changed) save(list);
+    return list;
   } catch (e) {
     console.error('[questionBank] questions.json unreadable, reseeding from rubric.js defaults:', e.message);
     const seeded = seedDefaults();
@@ -164,8 +185,6 @@ function validate(input, { isNew }) {
   const errors = [];
   if (!input.title || !String(input.title).trim()) errors.push('title is required');
   if (!input.section || !String(input.section).trim()) errors.push('section is required');
-  const weight = Number(input.weight);
-  if (!Number.isFinite(weight) || weight < 0 || weight > 100) errors.push('weight must be a number between 0 and 100');
   // New custom questions take a single flat `inputType` from the admin UI
   // (wrapped into fields[] below) — multi-field questions are Sentinel
   // built-ins only and aren't hand-authored through this validator.
@@ -195,7 +214,7 @@ async function addQuestion(input, provisionField) {
     id,
     section: String(input.section).trim(),
     title: String(input.title).trim(),
-    weight: Number(input.weight),
+    weight: 1, // every question counts equally
     critical: !!input.critical,
     adequacy: String(input.adequacy || '').trim() || 'Evidence for this area is documented.',
     efficacy: String(input.efficacy || '').trim() || 'Evidence proves the control actually operates.',

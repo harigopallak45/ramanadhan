@@ -14,14 +14,14 @@ const INPUT_TYPE_LABELS = {
   radio: 'Radio select', select: 'Dropdown', phone: 'Phone', monetary: 'Monetary', checkbox: 'Checkbox (Yes/No)'
 };
 const NEEDS_OPTIONS = new Set(['radio', 'select']);
-const EMPTY_FORM = { section: '', title: '', weight: 2, adequacy: '', efficacy: '', inputType: 'file', critical: false, keywords: '', options: '' };
+const EMPTY_FORM = { section: '', title: '', adequacy: '', efficacy: '', inputType: 'file', critical: false, keywords: '', options: '' };
 
 export default function QuestionBuilder() {
   const toast = useToast();
   const [questions, setQuestions] = useState([]);
-  const [weightTotal, setWeightTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [dragId, setDragId] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -35,7 +35,6 @@ export default function QuestionBuilder() {
     try {
       const data = await ragApi.listQuestions();
       setQuestions(data.questions.sort((a, b) => a.order - b.order));
-      setWeightTotal(data.weightTotal);
       setLoadError('');
     } catch (err) {
       setLoadError(err.message);
@@ -49,12 +48,19 @@ export default function QuestionBuilder() {
     return acc;
   }, {});
 
-  async function move(id, dir) {
+  // Pick-and-move drag reorder — drop a question on top of another to swap
+  // it into that spot. Works across the whole active list (not just within
+  // one section), matching how `order` itself is a single global sequence.
+  async function handleDrop(targetId) {
+    const draggedId = dragId;
+    setDragId(null);
+    if (!draggedId || draggedId === targetId) return;
     const list = [...active];
-    const idx = list.findIndex((q) => q.id === id);
-    const swapIdx = idx + dir;
-    if (swapIdx < 0 || swapIdx >= list.length) return;
-    [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+    const fromIdx = list.findIndex((q) => q.id === draggedId);
+    const toIdx = list.findIndex((q) => q.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, moved);
     try {
       await ragApi.reorderQuestions(list.map((q) => q.id));
       await load();
@@ -64,7 +70,7 @@ export default function QuestionBuilder() {
   function openModal(q) {
     setEditingId(q?.id || null);
     setForm(q ? {
-      section: q.section, title: q.title, weight: q.weight, adequacy: q.adequacy,
+      section: q.section, title: q.title, adequacy: q.adequacy,
       efficacy: q.efficacy, inputType: q.fields?.[0]?.inputType || 'file', critical: q.critical,
       keywords: (q.keywords || []).join(', '), options: (q.fields?.[0]?.options || []).join(', ')
     } : EMPTY_FORM);
@@ -92,7 +98,7 @@ export default function QuestionBuilder() {
       if (!ok) return;
     }
     const payload = {
-      section: form.section.trim(), title: form.title.trim(), weight: Number(form.weight),
+      section: form.section.trim(), title: form.title.trim(),
       adequacy: form.adequacy.trim(), efficacy: form.efficacy.trim(),
       critical: form.critical, keywords: form.keywords.split(',').map((s) => s.trim()).filter(Boolean)
     };
@@ -123,8 +129,6 @@ export default function QuestionBuilder() {
     catch (err) { toast(err.message, 'error'); }
   }
 
-  const weightOk = Math.abs(weightTotal - 100) < 0.01;
-
   return (
     <div className="theme-dark" style={{ minHeight: '100vh' }}>
       <Topbar tabs={NAV_TABS} />
@@ -137,13 +141,6 @@ export default function QuestionBuilder() {
           </div>
           <Button variant="primary" onClick={() => openModal(null)}>+ Add question</Button>
         </div>
-
-        {!loading && !loadError && (
-          <div className={`qb-weight-banner ${weightOk ? 'ok' : 'warn'}`}>
-            <span>{weightOk ? '✓ Active weights total exactly 100' : `⚠ Active weights total ${weightTotal}, not 100 — scores are auto-normalised, but review your weighting`}</span>
-            <span className="faint" style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{weightTotal}/100</span>
-          </div>
-        )}
 
         {loading && (
           <>
@@ -161,7 +158,13 @@ export default function QuestionBuilder() {
           <div className="qb-section" key={section}>
             <div className="qb-section-heading">{section}</div>
             {list.map((q) => (
-              <QuestionRow key={q.id} q={q} activeList={active} onMove={move} onEdit={openModal} onArchive={archiveQuestion} />
+              <QuestionRow
+                key={q.id} q={q} onEdit={openModal} onArchive={archiveQuestion}
+                dragging={dragId === q.id}
+                onDragStart={() => setDragId(q.id)}
+                onDragEnd={() => setDragId(null)}
+                onDrop={() => handleDrop(q.id)}
+              />
             ))}
           </div>
         ))}
@@ -170,7 +173,7 @@ export default function QuestionBuilder() {
           <div className="qb-section">
             <div className="qb-section-heading">Archived ({archived.length})</div>
             {archived.map((q) => (
-              <QuestionRow key={q.id} q={q} activeList={active} onMove={move} onEdit={openModal} onRestore={restoreQuestion} />
+              <QuestionRow key={q.id} q={q} onEdit={openModal} onRestore={restoreQuestion} />
             ))}
           </div>
         )}
@@ -197,14 +200,9 @@ export default function QuestionBuilder() {
               </span>
             </div>
           )}
-          <div className="qb-two-col">
-            <Field label="Section">
-              <TextInput placeholder="e.g. Step 2: Risk Assessment" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} />
-            </Field>
-            <Field label="Weight (of 100)">
-              <TextInput type="number" min={0} max={100} step={0.5} value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} />
-            </Field>
-          </div>
+          <Field label="Section">
+            <TextInput placeholder="e.g. Step 2: Risk Assessment" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} />
+          </Field>
           <Field label="Title">
             <TextInput placeholder="Short, specific — this is what the client sees" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </Field>
@@ -253,15 +251,18 @@ export default function QuestionBuilder() {
   );
 }
 
-function QuestionRow({ q, activeList, onMove, onEdit, onArchive, onRestore }) {
-  const idx = activeList.findIndex((x) => x.id === q.id);
-  const canUp = idx > 0, canDown = idx >= 0 && idx < activeList.length - 1;
+function QuestionRow({ q, onEdit, onArchive, onRestore, dragging, onDragStart, onDragEnd, onDrop }) {
+  const draggable = !q.archived && !!onDragStart;
   return (
-    <div className={`card qb-row ${q.archived ? 'archived' : ''}`}>
-      <div className="qb-order">
-        <button disabled={q.archived || !canUp} onClick={() => onMove(q.id, -1)} title="Move up">▲</button>
-        <button disabled={q.archived || !canDown} onClick={() => onMove(q.id, 1)} title="Move down">▼</button>
-      </div>
+    <div
+      className={`card qb-row ${q.archived ? 'archived' : ''} ${dragging ? 'qb-row--dragging' : ''}`}
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onDragOver={draggable ? (e) => e.preventDefault() : undefined}
+      onDrop={draggable ? (e) => { e.preventDefault(); onDrop(); } : undefined}
+    >
+      {draggable && <div className="qb-drag-handle" title="Drag to reorder">⠿</div>}
       <div className="qb-id">{q.id}</div>
       <div className="qb-main-col">
         <div className="qb-item-title">{q.title}</div>
@@ -270,11 +271,9 @@ function QuestionRow({ q, activeList, onMove, onEdit, onArchive, onRestore }) {
           {q.fields?.length > 1
             ? <Badge tone="neutral">{q.fields.length} fields</Badge>
             : <Badge tone="neutral">{INPUT_TYPE_LABELS[q.fields?.[0]?.inputType] || q.fields?.[0]?.inputType}</Badge>}
-          {q.builtin ? <Badge tone="neutral">Built-in</Badge> : <Badge tone="gold">Custom</Badge>}
           {!q.fields?.every((f) => f.ghlFieldId) && <Badge tone="pending">No GHL field yet</Badge>}
         </div>
       </div>
-      <div className="qb-weight">{q.weight}</div>
       <div className="qb-actions">
         <Button variant="ghost" className="btn-icon" title="Edit" onClick={() => onEdit(q)}>✎</Button>
         {q.archived
