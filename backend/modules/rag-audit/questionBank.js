@@ -185,10 +185,19 @@ function validate(input, { isNew }) {
   const errors = [];
   if (!input.title || !String(input.title).trim()) errors.push('title is required');
   if (!input.section || !String(input.section).trim()) errors.push('section is required');
-  // New custom questions take a single flat `inputType` from the admin UI
-  // (wrapped into fields[] below) — multi-field questions are Sentinel
-  // built-ins only and aren't hand-authored through this validator.
-  if (input.inputType && !INPUT_TYPES.includes(input.inputType)) errors.push(`inputType must be one of: ${INPUT_TYPES.join(', ')}`);
+  // A custom question can carry either a single flat `inputType` (legacy
+  // shorthand, wrapped into a lone 'value' field below) or a full fields[]
+  // array from the multi-field admin editor — Sentinel built-ins' fields[]
+  // is fixed, real GHL wiring and never reaches this validator via the UI.
+  if (Array.isArray(input.fields)) {
+    if (!input.fields.length) errors.push('at least one field is required');
+    input.fields.forEach((f, i) => {
+      if (!f || !String(f.label || '').trim()) errors.push(`field ${i + 1} needs a label`);
+      if (f && f.inputType && !INPUT_TYPES.includes(f.inputType)) errors.push(`field ${i + 1} inputType must be one of: ${INPUT_TYPES.join(', ')}`);
+    });
+  } else if (input.inputType && !INPUT_TYPES.includes(input.inputType)) {
+    errors.push(`inputType must be one of: ${INPUT_TYPES.join(', ')}`);
+  }
   if (isNew && input.id) {
     if (!/^Q\d{2,}$/i.test(input.id)) errors.push('id must look like "Q24"');
     if (all().some(q => q.id.toUpperCase() === String(input.id).toUpperCase())) errors.push(`id ${input.id} already exists`);
@@ -210,6 +219,21 @@ async function addQuestion(input, provisionField) {
   const id = /^Q\d{2,}$/i.test(input.id || '') ? input.id.toUpperCase() : nextId();
   const now = input.__now || new Date().toISOString();
 
+  // Either a full fields[] array from the multi-field admin editor, or the
+  // legacy single flat inputType — both end up as the same fields[] shape.
+  const rawFields = Array.isArray(input.fields) && input.fields.length
+    ? input.fields
+    : [{ label: 'Answer', inputType: input.inputType || 'file', options: input.options }];
+
+  const fields = rawFields.map((f, i) => ({
+    key: (f && f.key) || (rawFields.length > 1 ? `field_${i + 1}` : 'value'),
+    label: String((f && f.label) || 'Answer').trim(),
+    inputType: (f && f.inputType) || 'file',
+    ghlFieldId: null,
+    ghlFieldKey: null,
+    options: ['radio', 'select'].includes(f && f.inputType) ? parseOptions(f.options) : undefined
+  }));
+
   const question = {
     id,
     section: String(input.section).trim(),
@@ -218,10 +242,7 @@ async function addQuestion(input, provisionField) {
     critical: !!input.critical,
     adequacy: String(input.adequacy || '').trim() || 'Evidence for this area is documented.',
     efficacy: String(input.efficacy || '').trim() || 'Evidence proves the control actually operates.',
-    fields: [{
-      key: 'value', label: 'Answer', inputType: input.inputType || 'file', ghlFieldId: null, ghlFieldKey: null,
-      options: ['radio', 'select'].includes(input.inputType) ? parseOptions(input.options) : undefined
-    }],
+    fields,
     keywords: Array.isArray(input.keywords) ? input.keywords.map(String) : [],
     order: Number.isFinite(input.order) ? input.order : list.length,
     builtin: false,
@@ -231,10 +252,12 @@ async function addQuestion(input, provisionField) {
   };
 
   if (typeof provisionField === 'function') {
-    const provisioned = await provisionField(question, question.fields[0]);
-    if (provisioned) {
-      question.fields[0].ghlFieldId = provisioned.fieldId || null;
-      question.fields[0].ghlFieldKey = provisioned.fieldKey || null;
+    for (const field of question.fields) {
+      const provisioned = await provisionField(question, field);
+      if (provisioned) {
+        field.ghlFieldId = provisioned.fieldId || null;
+        field.ghlFieldKey = provisioned.fieldKey || null;
+      }
     }
   }
 

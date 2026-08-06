@@ -7,7 +7,7 @@
   background: var(--success-wash); color: var(--success); border: 1px solid rgba(16,185,129,0.3);
   white-space: nowrap;
 }
-.ad-engine-chip.off { background: var(--danger-wash); color: var(--danger); border-color: rgba(239,68,68,0.3); }
+.ad-engine-chip.off { background: var(--danger-wash); color: var(--danger); border-color: rgba(153,27,27,0.3); }
 
 /* ---- Summary line (plain text, no boxes) ---- */
 .ad-summary-line { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; }

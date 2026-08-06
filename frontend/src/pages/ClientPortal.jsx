@@ -173,7 +173,27 @@ function Portal({ onLogout }) {
   // Editing is open by default at ANY submission stage, partial or complete
   // — a client can always come back and change/resubmit. The ONLY thing
   // that locks the portal is an explicit admin action (never automatic).
-  const showLiveForm = !!profile && !profile.editingLocked;
+  //
+  // Locking is per-question, not all-or-nothing: a locked question's
+  // already-answered sub-fields turn read-only, but any still-blank
+  // sub-field stays open — and an admin can grant a specific question back
+  // to fully editable via the per-question picker (profile.grantedQuestionIds).
+  const grantedIds = new Set(profile?.grantedQuestionIds || []);
+  const isQuestionLocked = useCallback(
+    (qId) => !!profile?.editingLocked && !grantedIds.has(qId),
+    [profile?.editingLocked, profile?.grantedQuestionIds]
+  );
+  const hasAnyEditableField = !!schema && schema.some((q) => {
+    if (!isQuestionLocked(q.id)) return true;
+    const fields = q.fields?.length ? q.fields : [{ key: 'value' }];
+    const answerByField = answers[q.id];
+    return fields.some((f) => {
+      const sf = answerByField?.[f.key];
+      const hasAnswer = !!(sf?.value && String(sf.value).trim()) || (sf?.files?.length > 0);
+      return !hasAnswer;
+    });
+  });
+  const showLiveForm = !!profile && (!profile.editingLocked || hasAnyEditableField);
 
   async function saveAnswer(qId, subKey, value) {
     const prev = answers[qId]?.[subKey]?.value || '';
@@ -278,10 +298,13 @@ function Portal({ onLogout }) {
           <>
             {profile.editingLocked && (
               <div className="cp-locked-banner">
-                <div className="cp-locked-title display">Submission Locked (Read-Only)</div>
+                <div className="cp-locked-title display">
+                  {hasAnyEditableField ? 'Submission Locked — Partial Editing' : 'Submission Locked (Read-Only)'}
+                </div>
                 <p>
-                  Your auditor has locked editing while they review your Response Requirement Statement (RRS). If
-                  you need to make changes, please request an edit lock release from the principal auditor.
+                  {hasAnyEditableField
+                    ? "Your auditor has locked editing while they review your Response Requirement Statement (RRS). You can still fill in anything you haven't answered yet, but already-submitted answers are locked unless your auditor grants edit permission for that specific question."
+                    : "Your auditor has locked editing while they review your Response Requirement Statement (RRS). If you need to make changes, please request edit permission from the principal auditor."}
                 </p>
               </div>
             )}
@@ -310,6 +333,7 @@ function Portal({ onLogout }) {
                 schema={schema}
                 answers={answers}
                 readOnly={!showLiveForm}
+                isQuestionLocked={isQuestionLocked}
                 onSave={saveAnswer}
                 onUpload={uploadFile}
                 onRemoveFile={removeFile}
@@ -326,7 +350,7 @@ function Portal({ onLogout }) {
   );
 }
 
-function IntakeForm({ schema, answers, readOnly, onSave, onUpload, onRemoveFile, onSubmit, submitting }) {
+function IntakeForm({ schema, answers, readOnly, isQuestionLocked, onSave, onUpload, onRemoveFile, onSubmit, submitting }) {
   const bySection = {};
   schema.forEach((q) => {
     (bySection[q.section] = bySection[q.section] || []).push(q);
@@ -364,7 +388,7 @@ function IntakeForm({ schema, answers, readOnly, onSave, onUpload, onRemoveFile,
           <div className="cp-section" key={section}>
             <div className="cp-section-label">{section}</div>
             {qs.map((q) => (
-              <QuestionCard key={q.id} q={q} answer={answers[q.id]} readOnly={readOnly} onSave={onSave} onUpload={onUpload} onRemoveFile={onRemoveFile} />
+              <QuestionCard key={q.id} q={q} answer={answers[q.id]} readOnly={readOnly} isQuestionLocked={isQuestionLocked} onSave={onSave} onUpload={onUpload} onRemoveFile={onRemoveFile} />
             ))}
           </div>
         ))
@@ -390,9 +414,10 @@ function IntakeForm({ schema, answers, readOnly, onSave, onUpload, onRemoveFile,
 // A question now maps to 1-4 real sub-fields (e.g. Q08 = AMLCO name +
 // certification + CV upload) — QuestionAnswerFields (shared with the admin
 // console) renders every one of them.
-function QuestionCard({ q, answer, readOnly, onSave, onUpload, onRemoveFile }) {
+function QuestionCard({ q, answer, readOnly, isQuestionLocked, onSave, onUpload, onRemoveFile }) {
   const answered = questionHasAnswer(answer);
   const dotClass = answered ? 'answered' : q.critical ? 'critical' : 'empty';
+  const locked = !readOnly && !!isQuestionLocked?.(q.id);
 
   return (
     <div className="cp-qcard card">
@@ -401,12 +426,15 @@ function QuestionCard({ q, answer, readOnly, onSave, onUpload, onRemoveFile }) {
           <span className={`cp-qdot cp-qdot--${dotClass}`} />
           <span className="cp-qcard-id">{q.id}</span>
         </div>
-        {q.critical && <span className="badge badge--danger">Important</span>}
+        <div className="cp-qcard-badges">
+          {locked && <span className="badge badge--neutral" title="Already-answered fields are locked; ask your auditor for edit permission">🔒 Locked</span>}
+          {q.critical && <span className="badge badge--danger">Important</span>}
+        </div>
       </div>
       <div className="cp-qcard-title">{q.title}</div>
       {q.lookingFor && <div className="cp-qcard-hint">{q.lookingFor}</div>}
 
-      <QuestionAnswerFields q={q} answer={answer} readOnly={readOnly} onSave={onSave} onUpload={onUpload} onRemoveFile={onRemoveFile} />
+      <QuestionAnswerFields q={q} answer={answer} readOnly={readOnly} isQuestionLocked={isQuestionLocked} onSave={onSave} onUpload={onUpload} onRemoveFile={onRemoveFile} />
     </div>
   );
 }

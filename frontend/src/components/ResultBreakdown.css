@@ -31,7 +31,7 @@
   font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
   border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px 9px;
 }
-.rb-tag--critical { color: var(--danger); border-color: rgba(239,68,68,0.3); }
+.rb-tag--critical { color: var(--danger); border-color: rgba(153,27,27,0.3); }
 
 .rb-customize-head { padding: 22px 24px 0; }
 .rb-customize-list { padding: 16px 24px; max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }

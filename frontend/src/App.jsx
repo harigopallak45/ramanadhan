@@ -10,11 +10,16 @@ import AuditorConsole from './pages/AuditorConsole';
 import AdminDashboard from './pages/AdminDashboard';
 import QuestionBuilder from './pages/QuestionBuilder';
 
+// Matches whatever `base` vite.config.js was built with (via VITE_BASE_PATH)
+// so client-side route changes stay under the same sub-path the app is
+// actually deployed at, e.g. '/hlgp' — BrowserRouter wants no trailing slash.
+const ROUTER_BASENAME = import.meta.env.BASE_URL.replace(/\/+$/, '') || '/';
+
 export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={ROUTER_BASENAME}>
           <Routes>
             <Route path="/login" element={<Login />} />
             {/* The backend generates password-reset and invite links pointing

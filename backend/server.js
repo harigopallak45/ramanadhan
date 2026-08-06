@@ -8,10 +8,12 @@ const path = require('path');
 const fs = require('fs');
 // Reused for server-side completeness checking on submit (never trust a
 // client-reported "I answered everything" — recompute it from real GHL data).
-const { getEnrichedContact: raGetEnrichedContact, updateContactFields: raUpdateContactFields } = require('./modules/rag-audit/ghl');
+const { getEnrichedContact: raGetEnrichedContact, updateContactFields: raUpdateContactFields, createCustomField: raCreateCustomField } = require('./modules/rag-audit/ghl');
 const { groupResponses: raGroupResponses } = require('./modules/rag-audit/fieldMapper');
 const raQuestionBank = require('./modules/rag-audit/questionBank');
 const raAssignments = require('./modules/rag-audit/assignments');
+const raEditPermissions = require('./modules/rag-audit/editPermissions');
+const raRequestReminders = require('./modules/rag-audit/requestReminders');
 const { RRS_META_FIELDS } = require('./modules/rag-audit/sentinelFields');
 
 const app = express();
@@ -148,6 +150,17 @@ async function resolveFieldIds() {
     } catch (error) {
         console.error('[GHL RESOLVE ERROR]:', error.response?.data || error.message);
     }
+}
+
+// The one GHL field that records WHEN a "Request client" message was sent —
+// the start of the 3/5/7-day follow-up reminder clock. Provisioned the
+// FIRST time any admin actually sends a request, never as a side effect of
+// a read (see requestReminders.js for the full model).
+async function resolveRequestTimestampFieldId() {
+    const meta = await raRequestReminders.resolveTimestampField(() =>
+        raCreateCustomField({ name: 'Client Request Sent At', dataType: 'TEXT' })
+    );
+    return meta.fieldId;
 }
 
 resolveFieldIds();
@@ -733,11 +746,6 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
                                     Reset Password
                                 </a>
                             </div>
-                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
-                                If the button above does not work, copy and paste the following URL into your browser:
-                                <br/>
-                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${resetUrl}</span>
-                            </p>
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
                             <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
                                 Sent automatically by the AML Compliance Review Board.<br/>
@@ -820,11 +828,21 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
         const contact = response.data.contact;
-        
+
+        // Starts (or restarts) the 3/5/7-day follow-up reminder clock — a
+        // fresh request always resets it, so previously-fired reminder
+        // stages must be cleared too (otherwise a stage due from the OLD
+        // request would look "already sent" and get silently skipped now).
+        const timestampFieldId = await resolveRequestTimestampFieldId();
+        const reminderStageTags = raRequestReminders.REMINDER_STAGES.map((s) => s.tag);
+
         // Update contact fields & tags
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
-            customFields: [{ id: ADMIN_MESSAGE_FIELD_ID, value: message }],
-            tags: modifyTags(contact.tags, { add: ['client request triggered'] })
+            customFields: [
+                { id: ADMIN_MESSAGE_FIELD_ID, value: message },
+                { id: timestampFieldId, value: new Date().toISOString() }
+            ],
+            tags: modifyTags(contact.tags, { add: ['client request triggered'], remove: reminderStageTags })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -1006,11 +1024,6 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
                                     Set Up Your Account
                                 </a>
                             </div>
-                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
-                                If the button above does not work, copy and paste the following URL into your browser:
-                                <br/>
-                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${inviteUrl}</span>
-                            </p>
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
                             <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
                                 Sent automatically by the AML Compliance Review Board.<br/>
@@ -1106,6 +1119,17 @@ app.post(['/api/admin/users/:id/edit-permission', '/hlgp/api/admin/users/:id/edi
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
+        // A fresh lock resets any previously-granted per-question edit
+        // permissions — re-locking is meant to mean "locked", not "locked
+        // except for whatever was granted last time". Admin grants specific
+        // questions back via the separate per-question picker afterward.
+        if (action === 'lock') {
+            const grantFieldId = raEditPermissions.peekGrantFieldId();
+            if (grantFieldId) {
+                await raUpdateContactFields(contactId, [{ id: grantFieldId, value: '' }]);
+            }
+        }
+
         // Add note to activity log
         await axios.post(`https://services.leadconnectorhq.com/contacts/${contactId}/notes`, {
             body: `Portal Activity Log: Auditor ${action === 'unlock' ? 'UNLOCKED' : 'LOCKED'} client editing access.`
@@ -1153,12 +1177,20 @@ app.get(['/api/client/profile', '/hlgp/api/client/profile'], verifyClientToken, 
         // thing that locks a client out is an explicit admin action.
         const editingLocked = tags.includes('editing locked');
 
+        // Which questions (if any) have full edit permission granted back
+        // despite the global lock — [] when not locked at all (irrelevant)
+        // or when locked with nothing specially granted (the default).
+        const grantFieldId = raEditPermissions.peekGrantFieldId();
+        const grantRaw = grantFieldId ? (contact.customFields || []).find(f => f.id === grantFieldId)?.value : null;
+        const grantedQuestionIds = raEditPermissions.parseGrantedIds(grantRaw);
+
         res.json({
             success: true,
             contact,
             done,
             isPartial,
-            editingLocked
+            editingLocked,
+            grantedQuestionIds
         });
     } catch (error) {
         console.error('[CLIENT PROFILE ERROR]:', error.response?.data || error.message);
@@ -1317,5 +1349,121 @@ app.get(/.*/, (req, res, next) => {
     }
     res.sendFile(indexPath);
 });
+
+// =====================================================================
+// REQUEST-CLIENT FOLLOW-UP REMINDERS — a daily sweep that emails anyone
+// who hasn't fully responded to an admin's "Request client" message within
+// 3/5/7 days of it being sent. See modules/rag-audit/requestReminders.js
+// for the stage/timestamp model. No new client-facing route: this is a
+// background job, not something the admin UI triggers directly.
+// =====================================================================
+
+async function sendFollowUpReminderEmail(contact, stage, originalMessage) {
+    const portalLink = getFrontendUrl();
+    await axios.post(`https://services.leadconnectorhq.com/conversations/messages`, {
+        type: 'Email',
+        contactId: contact.id,
+        subject: `Reminder (Day ${stage.days}): Auditor Update Requested`,
+        emailSubject: `Reminder (Day ${stage.days}): Auditor Update Requested`,
+        html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #1e293b;">
+                <div style="margin-bottom: 24px; text-align: center;">
+                    <div style="display: inline-block; font-size: 32px; margin-bottom: 8px;">⏰</div>
+                    <h2 style="margin: 0; font-family: Georgia, serif; font-size: 24px; color: #0f172a; font-weight: 600;">Following Up: Compliance Review Update</h2>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                    Hello ${contact.firstName || 'Client'},
+                </p>
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                    It's been ${stage.days} days since your auditor requested the following, and we haven't yet received your response:
+                </p>
+                ${originalMessage ? `
+                <div style="margin: 24px 0; padding: 20px; background: #f8fafc; border-left: 4px solid #d4b256; border-radius: 4px; font-style: italic; font-size: 15px; line-height: 1.6; color: #0f172a; font-family: monospace;">
+                    ${String(originalMessage).replace(/\n/g, '<br>')}
+                </div>
+                ` : ''}
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 32px;">
+                    Please log in to your external review portal using the button below to upload the necessary document evidence or answer outstanding questions.
+                </p>
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <a href="${portalLink}" target="_blank" style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); transition: background-color 0.2s;">
+                        Access Review Portal
+                    </a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
+                <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
+                    Sent automatically by the AML Compliance Review Board.<br/>
+                    Please do not reply directly to this message.
+                </p>
+            </div>
+        `
+    }, {
+        headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+    });
+}
+
+async function runReminderSweep() {
+    const timestampFieldId = raRequestReminders.peekTimestampFieldId();
+    if (!timestampFieldId) return; // no admin has ever sent a request yet — nothing to do, no GHL write triggered
+
+    const ghlHeaders = { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' };
+    let sent = 0;
+    try {
+        // Same cursor-pagination approach as GET /api/admin/users — a cheap
+        // tags-only pass to find candidates before fetching each one's full
+        // custom-field detail (needed for the actual timestamp value).
+        const MAX_PAGES = parseInt(process.env.ADMIN_MAX_CONTACT_PAGES || '50', 10);
+        let contacts = [];
+        let startAfter = null, startAfterId = null;
+        for (let page = 0; page < MAX_PAGES; page++) {
+            let url = `https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`;
+            if (startAfter && startAfterId) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+            const response = await axios.get(url, { headers: ghlHeaders });
+            const batch = response.data.contacts || [];
+            contacts = contacts.concat(batch);
+            const meta = response.data.meta || {};
+            if (batch.length < 100 || !meta.startAfterId) break;
+            startAfter = meta.startAfter; startAfterId = meta.startAfterId;
+        }
+
+        const candidates = contacts.filter(c => (c.tags || []).map(t => String(t).toLowerCase().trim()).includes('client request triggered'));
+
+        for (const candidate of candidates) {
+            try {
+                const detailRes = await axios.get(`https://services.leadconnectorhq.com/contacts/${candidate.id}`, { headers: ghlHeaders });
+                const contact = detailRes.data.contact;
+                if (!contact) continue;
+
+                const tsField = (contact.customFields || []).find(f => f.id === timestampFieldId);
+                const stage = raRequestReminders.dueReminderStage(contact.tags, tsField?.value);
+                if (!stage) continue;
+
+                const msgField = (contact.customFields || []).find(f => f.id === ADMIN_MESSAGE_FIELD_ID);
+                await sendFollowUpReminderEmail(contact, stage, msgField?.value);
+
+                await axios.put(`https://services.leadconnectorhq.com/contacts/${candidate.id}`, {
+                    tags: modifyTags(contact.tags, { add: [stage.tag] })
+                }, { headers: ghlHeaders });
+
+                await axios.post(`https://services.leadconnectorhq.com/contacts/${candidate.id}/notes`, {
+                    body: `Portal Activity Log: Automatic ${stage.days}-day follow-up reminder sent (no response yet to the outstanding request).`
+                }, { headers: ghlHeaders });
+
+                sent++;
+            } catch (err) {
+                console.error(`[REMINDER SWEEP] Failed for contact ${candidate.id}:`, err.response?.data || err.message);
+            }
+        }
+        console.log(`[REMINDER SWEEP] Checked ${candidates.length} pending request(s), sent ${sent} reminder(s).`);
+    } catch (error) {
+        console.error('[REMINDER SWEEP ERROR]:', error.response?.data || error.message);
+    }
+}
+
+// First sweep shortly after boot (so a restart doesn't wait a full day to
+// catch up), then once every 24h for the life of the process.
+setTimeout(runReminderSweep, 60 * 1000);
+setInterval(runReminderSweep, 24 * 60 * 60 * 1000);
 
 app.listen(PORT, () => console.log(`🚀 Audit Portal Backend running on port ${PORT}`));

@@ -1,7 +1,15 @@
 // Thin fetch wrapper shared by every page. Mirrors the BASE_URL convention
 // and localStorage keys the Express backend + old HTML pages already used,
 // so existing sessions and server-side auth logic keep working unchanged.
+//
+// VITE_API_BASE_URL (set in frontend/.env or frontend/.env.production) wins
+// when present, so a build can be pointed at any host — staging, a second
+// client domain, etc — with zero code changes. With no env var set, this
+// falls back to the historical zero-config behaviour: same-origin backend
+// on localhost during `vite dev`, the live amlcompliance.com.au API otherwise.
 export function apiBase() {
+  const envBase = import.meta.env.VITE_API_BASE_URL;
+  if (envBase) return envBase.replace(/\/+$/, '');
   return window.location.hostname.includes('localhost')
     ? 'http://localhost:5001'
     : 'https://amlcompliance.com.au/hlgp';
@@ -88,6 +96,8 @@ export const ragApi = {
   // individual is actually asked. assignedIds: null/omitted = everyone.
   getAssignments: (contactId) => apiFetch(`/api/rag-audit/assignments/${contactId}`),
   saveAssignments: (contactId, assignedIds) => apiFetch(`/api/rag-audit/assignments/${contactId}`, { method: 'POST', body: { assignedIds } }),
+  getEditPermissions: (contactId) => apiFetch(`/api/rag-audit/edit-permissions/${contactId}`),
+  saveEditPermissions: (contactId, questionIds) => apiFetch(`/api/rag-audit/edit-permissions/${contactId}`, { method: 'POST', body: { questionIds } }),
 
   // Client-facing assistant: their own status + general process info only.
   clientChat: (message) => apiFetch('/api/rag-audit/client-chat', { method: 'POST', body: { message } }),

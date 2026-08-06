@@ -12,3 +12,11 @@ file-names.json
 # Cached GHL field id/key for the per-client question-assignment field —
 # provisioned once at runtime on first use, not code.
 assignments-field.json
+
+# Cached GHL field id/key for the per-client edit-permission-grant field —
+# provisioned once at runtime on first use, not code.
+edit-permissions-field.json
+
+# Cached GHL field id/key for the "client request sent at" timestamp field —
+# provisioned once at runtime on first use, not code.
+request-timestamp-field.json

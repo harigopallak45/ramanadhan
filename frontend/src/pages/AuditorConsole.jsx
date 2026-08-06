@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import Topbar from '../components/layout/Topbar';
 import ResultBreakdown from '../components/ResultBreakdown';
 import AssignedQuestionsPanel from '../components/AssignedQuestionsPanel';
+import EditPermissionPicker from '../components/EditPermissionPicker';
 import QuestionAnswerFields from '../components/QuestionAnswerFields';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
@@ -80,6 +81,7 @@ export default function AuditorConsole() {
 
   const [viewer, setViewer] = useState(null);
   const [editingQId, setEditingQId] = useState(null);
+  const [grantedQuestionIds, setGrantedQuestionIds] = useState([]);
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [contactId]);
 
@@ -87,14 +89,16 @@ export default function AuditorConsole() {
     setLoading(true);
     setLoadError('');
     try {
-      const [userRes, schemaRes, respRes] = await Promise.all([
+      const [userRes, schemaRes, respRes, grantRes] = await Promise.all([
         apiFetch(`/api/admin/users/${contactId}`),
         ragApi.formSchema(contactId), // mirrors exactly what THIS client was asked, not the whole bank
-        ragApi.getResponses(contactId)
+        ragApi.getResponses(contactId),
+        ragApi.getEditPermissions(contactId)
       ]);
       setContact(userRes.contact);
       setQuestions(schemaRes.questions || []);
       setAnswers(respRes.answers || {});
+      setGrantedQuestionIds(grantRes.grantedQuestionIds || []);
     } catch (err) {
       setLoadError(err.message);
     } finally {
@@ -336,14 +340,17 @@ export default function AuditorConsole() {
     }
   }
 
-  async function toggleEditPermission(action) {
-    const msg = action === 'unlock'
-      ? 'Unlock editing for this client? This allows them to modify their survey responses and document uploads.'
-      : 'Lock editing for this client? This makes their portal read-only.';
-    if (!window.confirm(msg)) return;
+  // Locking is the only blanket action left — it makes every already-
+  // answered field read-only (blank fields always stay open regardless).
+  // There's no matching blanket "unlock everything" anymore: once locked,
+  // the admin grants specific questions back via EditPermissionPicker
+  // instead, so a client never gets more re-opened than actually intended.
+  async function lockEditing() {
+    if (!window.confirm('Lock editing for this client? Already-answered fields become read-only; anything still blank stays editable, and you can grant specific questions back afterward.')) return;
     try {
-      const data = await apiFetch(`/api/admin/users/${contactId}/edit-permission`, { method: 'POST', body: { action } });
+      const data = await apiFetch(`/api/admin/users/${contactId}/edit-permission`, { method: 'POST', body: { action: 'lock' } });
       toast(data.message || 'Updated');
+      setGrantedQuestionIds([]); // a fresh lock always resets prior grants (server does the same)
       load();
     } catch (err) {
       toast(err.message, 'error');
@@ -447,8 +454,8 @@ export default function AuditorConsole() {
                 ? <Button variant="danger" onClick={() => changeRole('demote_admin')}>Revoke admin rights</Button>
                 : <Button variant="secondary" onClick={() => changeRole('promote_admin')}>Promote to admin</Button>}
               {editingLocked
-                ? <Button variant="secondary" className="ac-gold-outline" onClick={() => toggleEditPermission('unlock')}>🔓 Unlock editing</Button>
-                : <Button variant="danger" onClick={() => toggleEditPermission('lock')}>🔒 Lock editing</Button>}
+                ? <EditPermissionPicker contactId={contactId} questions={questions} grantedQuestionIds={grantedQuestionIds} onSaved={setGrantedQuestionIds} />
+                : <Button variant="danger" onClick={lockEditing}>🔒 Lock editing</Button>}
               <Button variant="danger" onClick={() => changeRole('revoke_access')}>Revoke access</Button>
               <Button variant="ghost" onClick={() => setRequestModalOpen(true)}>Request client update</Button>
               <Button variant="ghost" onClick={() => setResetModalOpen(true)}>Reset password</Button>

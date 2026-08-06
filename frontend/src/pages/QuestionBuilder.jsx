@@ -14,7 +14,8 @@ const INPUT_TYPE_LABELS = {
   radio: 'Radio select', select: 'Dropdown', phone: 'Phone', monetary: 'Monetary', checkbox: 'Checkbox (Yes/No)'
 };
 const NEEDS_OPTIONS = new Set(['radio', 'select']);
-const EMPTY_FORM = { section: '', title: '', adequacy: '', efficacy: '', inputType: 'file', critical: false, keywords: '', options: '' };
+const EMPTY_FIELD = () => ({ key: null, label: 'Answer', inputType: 'file', options: '', ghlFieldId: null, ghlFieldKey: null });
+const EMPTY_FORM = { section: '', title: '', adequacy: '', efficacy: '', critical: false, keywords: '', fields: [EMPTY_FIELD()] };
 
 export default function QuestionBuilder() {
   const toast = useToast();
@@ -70,31 +71,63 @@ export default function QuestionBuilder() {
   function openModal(q) {
     setEditingId(q?.id || null);
     setForm(q ? {
-      section: q.section, title: q.title, adequacy: q.adequacy,
-      efficacy: q.efficacy, inputType: q.fields?.[0]?.inputType || 'file', critical: q.critical,
-      keywords: (q.keywords || []).join(', '), options: (q.fields?.[0]?.options || []).join(', ')
+      section: q.section, title: q.title, adequacy: q.adequacy, efficacy: q.efficacy, critical: q.critical,
+      keywords: (q.keywords || []).join(', '),
+      fields: (q.fields?.length ? q.fields : [{}]).map((f) => ({
+        key: f.key || null, label: f.label || 'Answer', inputType: f.inputType || 'file',
+        options: (f.options || []).join(', '), ghlFieldId: f.ghlFieldId || null, ghlFieldKey: f.ghlFieldKey || null
+      }))
     } : EMPTY_FORM);
     setModalOpen(true);
   }
 
   const editingQuestion = editingId ? questions.find((q) => q.id === editingId) : null;
-  // Multi-field Sentinel questions have their real GHL wiring fixed — the
-  // single "evidence type" picker only makes sense for a genuinely new
-  // question or an existing single-field custom one not yet provisioned.
-  const isMultiField = (editingQuestion?.fields?.length || 0) > 1;
-  const needsProvisioning = !editingId || !editingQuestion?.fields?.every((f) => f.ghlFieldId);
-  const canPickEvidenceType = !isMultiField && needsProvisioning;
+  // Sentinel built-ins map onto fixed, real fields in the GHL "Sentinel rrs"
+  // folder shared across every client already using them — their field
+  // structure (add/remove/retype a sub-field) is never editable here, only
+  // title/adequacy/efficacy/critical/keywords are. A brand-new question or
+  // an existing admin-added custom one can freely edit its fields[].
+  const canEditFieldStructure = !editingQuestion || !editingQuestion.builtin;
+  // Only a genuinely new question eagerly provisions GHL fields at save time
+  // (same as before) — adding a field to an EXISTING custom question stays
+  // lazy, provisioned on first real answer, so editing never surprises the
+  // admin with an immediate CRM write.
+  const newFieldCount = canEditFieldStructure && editingId
+    ? form.fields.filter((f) => !f.ghlFieldId).length
+    : 0;
+
+  function addField() {
+    setForm({ ...form, fields: [...form.fields, { ...EMPTY_FIELD(), key: `field_${Date.now()}` }] });
+  }
+  function updateField(idx, patch) {
+    setForm({ ...form, fields: form.fields.map((f, i) => (i === idx ? { ...f, ...patch } : f)) });
+  }
+  function removeField(idx) {
+    const field = form.fields[idx];
+    if (field.ghlFieldId && !window.confirm(`"${field.label}" already has answers saved against it in GHL. Removing it here won't delete that GHL field or its data, but this app will stop showing/using it. Continue?`)) return;
+    setForm({ ...form, fields: form.fields.filter((_, i) => i !== idx) });
+  }
 
   async function saveQuestion() {
     if (!form.title.trim() || !form.section.trim()) return toast('Title and section are required', 'error');
-    if (canPickEvidenceType && NEEDS_OPTIONS.has(form.inputType) && !form.options.trim()) {
-      return toast('Add at least one option (comma-separated) for a radio/dropdown question', 'error');
+    if (canEditFieldStructure) {
+      if (!form.fields.length) return toast('Add at least one field', 'error');
+      for (const f of form.fields) {
+        if (!f.label.trim()) return toast('Every field needs a label', 'error');
+        if (NEEDS_OPTIONS.has(f.inputType) && !f.options.trim()) {
+          return toast(`Add at least one option (comma-separated) for "${f.label}"`, 'error');
+        }
+      }
     }
-    if (needsProvisioning) {
+    if (!editingId) {
       const ok = window.confirm(
-        `This will create a new custom field "${form.title}" in your GHL account to store answers for this question. ` +
-        `This is a real, persistent change to your CRM. Continue?`
+        form.fields.length > 1
+          ? `This will create ${form.fields.length} new custom fields in your GHL account (one per field below) to store answers for this question. This is a real, persistent change to your CRM. Continue?`
+          : `This will create a new custom field "${form.title}" in your GHL account to store answers for this question. This is a real, persistent change to your CRM. Continue?`
       );
+      if (!ok) return;
+    } else if (newFieldCount > 0) {
+      const ok = window.confirm(`${newFieldCount} new field(s) below have no GHL wiring yet — they'll get their own custom field created automatically the first time a client answers them. Continue?`);
       if (!ok) return;
     }
     const payload = {
@@ -102,9 +135,13 @@ export default function QuestionBuilder() {
       adequacy: form.adequacy.trim(), efficacy: form.efficacy.trim(),
       critical: form.critical, keywords: form.keywords.split(',').map((s) => s.trim()).filter(Boolean)
     };
-    if (canPickEvidenceType) {
-      payload.inputType = form.inputType;
-      if (NEEDS_OPTIONS.has(form.inputType)) payload.options = form.options;
+    if (canEditFieldStructure) {
+      payload.fields = form.fields.map((f, i) => ({
+        key: f.key || (form.fields.length > 1 ? `field_${i + 1}` : 'value'),
+        label: f.label.trim(), inputType: f.inputType,
+        options: NEEDS_OPTIONS.has(f.inputType) ? f.options : undefined,
+        ghlFieldId: f.ghlFieldId || null, ghlFieldKey: f.ghlFieldKey || null
+      }));
     }
     setSaving(true);
     try {
@@ -185,19 +222,19 @@ export default function QuestionBuilder() {
           <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>Every field below is what the AI scorer uses to judge evidence — write it as if briefing a junior auditor.</p>
         </div>
         <div className="qb-modal-body">
-          {needsProvisioning && !isMultiField && (
-            <div className="qb-provision-note">
-              <span>ⓘ</span>
-              <span>This question has no matching field in GHL yet. Saving it will <strong>create a new custom field</strong> in your GHL account to store answers — a real, persistent change to your CRM.</span>
-            </div>
-          )}
-          {isMultiField && (
+          {!canEditFieldStructure && (
             <div className="qb-provision-note">
               <span>ⓘ</span>
               <span>
-                This question already maps to {editingQuestion.fields.length} real fields in your GHL "Sentinel rrs" folder
+                This question already maps to {editingQuestion.fields.length} real field{editingQuestion.fields.length > 1 ? 's' : ''} in your GHL "Sentinel rrs" folder
                 ({editingQuestion.fields.map((f) => f.label).join(', ')}) — that wiring is fixed and isn't edited here.
               </span>
+            </div>
+          )}
+          {canEditFieldStructure && !editingId && (
+            <div className="qb-provision-note">
+              <span>ⓘ</span>
+              <span>Saving this will <strong>create {form.fields.length > 1 ? `${form.fields.length} new custom fields` : 'a new custom field'}</strong> in your GHL account to store answers — a real, persistent change to your CRM.</span>
             </div>
           )}
           <Field label="Section">
@@ -212,32 +249,43 @@ export default function QuestionBuilder() {
           <Field label="What counts as effective? (actually works)">
             <TextArea placeholder="Describe the evidence that proves the control actually operates." value={form.efficacy} onChange={(e) => setForm({ ...form, efficacy: e.target.value })} />
           </Field>
-          <div className="qb-two-col">
-            {canPickEvidenceType && (
-              <Field label="Evidence type">
-                <Select value={form.inputType} onChange={(e) => setForm({ ...form, inputType: e.target.value })}>
-                  <option value="file">Document upload</option>
-                  <option value="textarea">Long text answer</option>
-                  <option value="text">Short text answer</option>
-                  <option value="number">Number</option>
-                  <option value="date">Date</option>
-                  <option value="phone">Phone</option>
-                  <option value="monetary">Monetary</option>
-                  <option value="checkbox">Checkbox (Yes/No)</option>
-                  <option value="radio">Radio select</option>
-                  <option value="select">Dropdown</option>
-                </Select>
-              </Field>
-            )}
-            <Field label="Critical area">
-              <Toggle checked={form.critical} onChange={(e) => setForm({ ...form, critical: e.target.checked })} label="Gaps here trigger a score penalty" />
+          <Field label="Critical area">
+            <Toggle checked={form.critical} onChange={(e) => setForm({ ...form, critical: e.target.checked })} label="Gaps here trigger a score penalty" />
+          </Field>
+
+          {canEditFieldStructure ? (
+            <Field label={form.fields.length > 1 ? 'Fields — a client fills in each one separately' : 'Field'} hint="add more than one when this question really needs several pieces of evidence at once, e.g. a count AND a supporting document">
+              <div className="qb-fields-list">
+                {form.fields.map((f, idx) => (
+                  <div className="qb-field-row" key={f.key || idx}>
+                    <div className="qb-field-row-main">
+                      <TextInput placeholder="Field label, e.g. Transaction count" value={f.label} onChange={(e) => updateField(idx, { label: e.target.value })} />
+                      <Select value={f.inputType} onChange={(e) => updateField(idx, { inputType: e.target.value })}>
+                        <option value="file">Document upload</option>
+                        <option value="textarea">Long text answer</option>
+                        <option value="text">Short text answer</option>
+                        <option value="number">Number</option>
+                        <option value="date">Date</option>
+                        <option value="phone">Phone</option>
+                        <option value="monetary">Monetary</option>
+                        <option value="checkbox">Checkbox (Yes/No)</option>
+                        <option value="radio">Radio select</option>
+                        <option value="select">Dropdown</option>
+                      </Select>
+                      {form.fields.length > 1 && (
+                        <Button variant="ghost" className="btn-icon" title="Remove field" onClick={() => removeField(idx)}>✕</Button>
+                      )}
+                    </div>
+                    {NEEDS_OPTIONS.has(f.inputType) && (
+                      <TextInput placeholder="Options, comma-separated — e.g. Yes, No" value={f.options} onChange={(e) => updateField(idx, { options: e.target.value })} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Button variant="secondary" size="sm" onClick={addField} style={{ marginTop: 8 }}>+ Add field</Button>
             </Field>
-          </div>
-          {canPickEvidenceType && NEEDS_OPTIONS.has(form.inputType) && (
-            <Field label={form.inputType === 'radio' ? 'Radio options' : 'Dropdown options'} hint="comma-separated — e.g. Yes, No">
-              <TextInput placeholder="Option one, Option two, Option three" value={form.options} onChange={(e) => setForm({ ...form, options: e.target.value })} />
-            </Field>
-          )}
+          ) : null}
+
           <Field label="Keywords" hint="optional — helps auto-sort uploaded files here">
             <TextInput placeholder="comma, separated, phrases" value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} />
           </Field>

@@ -6,9 +6,18 @@ import './QuestionAnswerFields.css';
 // Shared between the client intake form and the admin's per-client console —
 // so an auditor can add/reset/remove an individual answer on a client's
 // behalf using the exact same save/upload/remove-file API the client uses.
-export default function QuestionAnswerFields({ q, answer, readOnly, onSave, onUpload, onRemoveFile }) {
+//
+// `readOnly` still forces every sub-field to a plain view (used for a truly
+// finished, nothing-left-to-do render). `isQuestionLocked(qId)` is the new,
+// finer-grained check: a LOCKED question only turns a sub-field read-only
+// once it already has an answer — a still-blank sub-field stays editable
+// even while the question is locked, so a client can always finish
+// something they missed. Admin callers (readOnly is always false, no
+// isQuestionLocked passed) are unaffected — locks never apply to them.
+export default function QuestionAnswerFields({ q, answer, readOnly, isQuestionLocked, onSave, onUpload, onRemoveFile }) {
   const fields = q.fields && q.fields.length ? q.fields : [{ key: 'value', label: null, inputType: 'text' }];
   const showLabel = fields.length > 1;
+  const questionLocked = !readOnly && !!isQuestionLocked?.(q.id);
 
   return (
     <div className="qf-fields">
@@ -20,6 +29,7 @@ export default function QuestionAnswerFields({ q, answer, readOnly, onSave, onUp
           showLabel={showLabel}
           answer={answer?.[field.key] || { value: '', files: [] }}
           readOnly={readOnly}
+          questionLocked={questionLocked}
           onSave={onSave}
           onUpload={onUpload}
           onRemoveFile={onRemoveFile}
@@ -29,8 +39,13 @@ export default function QuestionAnswerFields({ q, answer, readOnly, onSave, onUp
   );
 }
 
-function SubFieldInput({ qId, field, showLabel, answer, readOnly, onSave, onUpload, onRemoveFile }) {
+function SubFieldInput({ qId, field, showLabel, answer, readOnly, questionLocked, onSave, onUpload, onRemoveFile }) {
   const a = answer || { value: '', files: [] };
+  const hasAnswer = !!(a.value && String(a.value).trim()) || (a.files && a.files.length > 0);
+  // Locked applies per sub-field: only an ALREADY-answered one becomes
+  // read-only while its question is locked-and-not-granted; a blank one
+  // always stays open.
+  const fieldLocked = readOnly || (questionLocked && hasAnswer);
   const [value, setValue] = useState(a.value || '');
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -73,13 +88,14 @@ function SubFieldInput({ qId, field, showLabel, answer, readOnly, onSave, onUplo
         </div>
       )}
 
-      {readOnly ? (
+      {fieldLocked ? (
         <div className="qf-readonly">
           {a.value ? (
             <div className="qf-readonly-value">{a.value}</div>
           ) : !a.files?.length ? (
             <div className="qf-readonly-empty">No answer provided.</div>
           ) : null}
+          {!readOnly && questionLocked && <div className="qf-locked-hint">Locked — ask your auditor for edit permission to change this.</div>}
         </div>
       ) : field.inputType === 'file' ? (
         <label className="qf-file-picker">
@@ -185,7 +201,7 @@ function SubFieldInput({ qId, field, showLabel, answer, readOnly, onSave, onUplo
               <button type="button" className="qf-file-chip-name" onClick={() => window.open(f.url, '_blank')}>
                 {f.name || 'document'}
               </button>
-              {!readOnly && (
+              {!fieldLocked && (
                 <button
                   type="button"
                   className="qf-file-chip-remove"

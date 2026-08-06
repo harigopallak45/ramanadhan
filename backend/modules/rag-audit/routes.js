@@ -25,7 +25,9 @@ const { isConfigured, completeJson, MODEL, PROVIDER, LlmError } = require('./llm
 const { retrieveRegulatory: ragRetrieve, isGrounded: isRagGrounded } = require('./rag');
 const questionBank = require('./questionBank');
 const assignments = require('./assignments');
+const editPermissions = require('./editPermissions');
 const fileNames = require('./fileNames');
+const { saveLocalCopy } = require('./localFileBackup');
 
 const router = express.Router();
 
@@ -141,6 +143,26 @@ function getAssignedIdsFromFields(fields) {
   if (!fieldId) return null;
   const f = fields.find((x) => x.id === fieldId);
   return assignments.parseAssignedIds(f?.value);
+}
+
+// The one GHL field that stores "which questions this contact currently has
+// full edit permission granted for, while the submission is globally
+// locked" (a JSON array of qIds). Provisioned the FIRST time an admin
+// actually grants something — never as a side effect of a read.
+async function resolveGrantFieldId() {
+  const meta = await editPermissions.resolveGrantField(() =>
+    createCustomField({ name: FIELD_NAME_PREFIX + 'Edit Permission Granted Questions', dataType: 'LARGE_TEXT' })
+  );
+  return meta.fieldId;
+}
+
+// Read-only: which questions currently have full edit permission granted for
+// this contact. [] = nothing granted (the default) — never creates a field.
+function getGrantedIdsFromFields(fields) {
+  const fieldId = editPermissions.peekGrantFieldId();
+  if (!fieldId) return [];
+  const f = fields.find((x) => x.id === fieldId);
+  return editPermissions.parseGrantedIds(f?.value);
 }
 
 // Factual snapshot of one client's real progress, for the client-chat
@@ -355,22 +377,31 @@ router.put('/questions/:id', adminAuth, async (req, res) => {
     const patch = { ...req.body };
     delete patch.id; delete patch.builtin; delete patch.weight; // server-owned — every question weighs 1
 
-    // A submitted `inputType` only makes sense as an edit for a genuinely
-    // single-field question not yet provisioned in GHL — translate it onto
-    // fields[0] rather than storing a meaningless top-level property. Any
-    // other `fields` in the body (e.g. from a stray client bug) is ignored —
-    // real GHL field wiring is never editable through this endpoint.
+    // Sentinel built-ins map onto fixed, real GHL fields (sentinelFields.js)
+    // shared across every client already using them — their field structure
+    // is never editable through this endpoint, no matter what the body sends.
     const existing = questionBank.getById(req.params.id);
-    if (patch.inputType && existing?.fields?.length === 1 && !existing.fields[0].ghlFieldId) {
+    if (existing?.builtin) {
+      delete patch.fields; delete patch.inputType; delete patch.options;
+    } else if (Array.isArray(patch.fields)) {
+      // Custom question, admin submitted a full fields[] array from the
+      // multi-field editor — used as-is. Brand-new rows arrive with
+      // ghlFieldId: null and get provisioned lazily on first real answer
+      // (resolveTargetField), exactly like a single-field custom question.
+      delete patch.inputType; delete patch.options;
+    } else if (patch.inputType) {
+      // Back-compat: a plain inputType/options patch with no fields[] still
+      // translates onto the sole 'value' field, same as before this change.
       const options = ['radio', 'select'].includes(patch.inputType)
         ? (Array.isArray(patch.options) ? patch.options : String(patch.options || '').split(',')).map(s => String(s).trim()).filter(Boolean)
         : undefined;
-      patch.fields = [{ ...existing.fields[0], inputType: patch.inputType, options }];
+      const base = existing?.fields?.[0] || { key: 'value', ghlFieldId: null, ghlFieldKey: null };
+      patch.fields = [{ ...base, inputType: patch.inputType, options }];
+      delete patch.inputType;
+      delete patch.options;
     } else {
       delete patch.fields;
     }
-    delete patch.inputType;
-    delete patch.options;
 
     const question = await questionBank.updateQuestion(req.params.id, patch);
     res.json({ success: true, question, weightTotal: questionBank.weightTotal() });
@@ -432,6 +463,37 @@ router.post('/assignments/:contactId', adminAuth, async (req, res) => {
   } catch (error) {
     const msg = error.response?.data?.message || error.message;
     res.status(500).json({ success: false, message: `Couldn't save the question list for this client: ${msg}` });
+  }
+});
+
+// =====================================================================
+// PER-QUESTION EDIT-PERMISSION GRANTS — while a client's submission is
+// globally locked, an admin can grant back full edit access to specific
+// questions only (see editPermissions.js for the full model). [] = nothing
+// granted, the default and the safe state on a fresh lock.
+// =====================================================================
+
+router.get('/edit-permissions/:contactId', adminAuth, async (req, res) => {
+  try {
+    const { fields } = await getEnrichedContact(req.params.contactId);
+    res.json({ success: true, grantedQuestionIds: getGrantedIdsFromFields(fields) });
+  } catch (error) {
+    const msg = error.message;
+    res.status(/Contact not found/i.test(msg) ? 404 : 500).json({ success: false, message: msg });
+  }
+});
+
+// Body: { questionIds: [qId, ...] }. Replaces the whole grant list —
+// omitted/empty clears it (equivalent to granting nothing extra).
+router.post('/edit-permissions/:contactId', adminAuth, async (req, res) => {
+  const questionIds = Array.isArray(req.body?.questionIds) ? req.body.questionIds.map(String) : [];
+  try {
+    const fieldId = await resolveGrantFieldId();
+    await updateContactFields(req.params.contactId, [{ id: fieldId, value: editPermissions.serializeGrantedIds(questionIds) }]);
+    res.json({ success: true, grantedQuestionIds: questionIds });
+  } catch (error) {
+    const msg = error.response?.data?.message || error.message;
+    res.status(500).json({ success: false, message: `Couldn't save edit permissions for this client: ${msg}` });
   }
 });
 
@@ -505,6 +567,8 @@ router.get('/responses/:contactId', clientAuth, async (req, res) => {
 // Body: { answers: { Q01: { program_notes: "text" }, Q05: { fatf_yn: "Yes" } } }
 // Each answer writes straight to its sub-field's real GHL custom field —
 // resolving/pinning it on first use (see resolveTargetField above).
+const LOCKED_MESSAGE = 'This question is locked for editing. Ask your auditor to grant edit permission for it.';
+
 router.post('/responses/:contactId', clientAuth, async (req, res) => {
   const answers = req.body?.answers;
   if (!answers || typeof answers !== 'object') {
@@ -512,21 +576,41 @@ router.post('/responses/:contactId', clientAuth, async (req, res) => {
   }
   try {
     const active = new Map(questionBank.listActive().map(q => [q.id, q]));
+    // Admin edits from the auditor console always bypass the lock — locking
+    // only ever restricts the CLIENT; it exists so the admin can decide.
+    const isAdmin = req.auth.role === 'admin';
+    const { contact, fields } = await getEnrichedContact(req.params.contactId);
+    const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
+    const globallyLocked = !isAdmin && tags.includes('editing locked');
+    const grantedIds = globallyLocked ? getGrantedIdsFromFields(fields) : [];
+    const groups = globallyLocked ? groupResponses(fields) : {};
+
     const updates = [];
     const skipped = [];
+    const denied = [];
     for (const [qId, subAnswers] of Object.entries(answers)) {
       const question = active.get(qId);
       if (!question || typeof subAnswers !== 'object') { skipped.push(qId); continue; }
+      // A question is locked to already-answered sub-fields only when
+      // globally locked AND not explicitly granted back — a still-blank
+      // sub-field always stays writable so a client can finish what they
+      // missed even without a grant.
+      const questionLocked = globallyLocked && !grantedIds.includes(qId);
       for (const [subKey, rawValue] of Object.entries(subAnswers)) {
         const subField = findSubField(question, subKey);
         if (!subField || subField.inputType === 'file') { skipped.push(`${qId}.${subKey}`); continue; }
+        if (questionLocked) {
+          const sf = groups[qId]?.fields?.find(f => f.key === subField.key);
+          const hasAnswer = !!(sf?.value && String(sf.value).trim());
+          if (hasAnswer) { denied.push(`${qId}.${subKey}`); continue; }
+        }
         const value = String(rawValue ?? '').slice(0, 20000);
         const { fieldId } = await resolveTargetField(question, subField);
         updates.push({ id: fieldId, value });
       }
     }
     if (updates.length) await updateContactFields(req.params.contactId, updates);
-    res.json({ success: true, saved: updates.length, skipped });
+    res.json({ success: true, saved: updates.length, skipped, denied, deniedMessage: denied.length ? LOCKED_MESSAGE : undefined });
   } catch (error) {
     const msg = error.response?.data?.message || error.message;
     console.error('[rag-audit SAVE RESPONSES ERROR]:', msg);
@@ -561,6 +645,19 @@ router.post('/responses/:contactId/upload', clientAuth, (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded.' });
 
     try {
+      // Fetched unconditionally — needed both for the lock check (client
+      // requests only) and to name the local backup folder (every request).
+      const { contact, fields } = await getEnrichedContact(req.params.contactId);
+
+      if (req.auth.role !== 'admin') {
+        const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
+        if (tags.includes('editing locked') && !getGrantedIdsFromFields(fields).includes(qId)) {
+          const groups = groupResponses(fields);
+          const sf = groups[qId]?.fields?.find(f => f.key === subField.key);
+          if (sf?.files?.length > 0) return res.status(403).json({ success: false, message: LOCKED_MESSAGE });
+        }
+      }
+
       const { fieldId } = await resolveTargetField(question, subField);
 
       const rawBefore = await getRawCustomFields(req.params.contactId);
@@ -581,6 +678,15 @@ router.post('/responses/:contactId/upload', clientAuth, (req, res) => {
       const newEntry = newValue[newKey] || {};
       const fileName = newEntry.meta?.originalname || req.file.originalname;
       if (newEntry.url) fileNames.set(newEntry.url, fileName);
+
+      // GHL is the source of truth (already written above) — this is purely
+      // a convenience copy on the server's own disk, filed as
+      // uploads/<Client>/<Year>/<QId[_field]>_<original filename>. Never
+      // allowed to fail the upload response — saveLocalCopy swallows its
+      // own errors.
+      const filenameHint = question.fields.length > 1 ? `${qId}_${subField.label}` : qId;
+      saveLocalCopy({ contact, filenameHint, buffer: req.file.buffer, originalFilename: req.file.originalname });
+
       res.json({ success: true, url: newEntry.url, fileName });
     } catch (error) {
       const msg = error.response?.data?.message || error.message;
@@ -604,6 +710,17 @@ router.post('/responses/:contactId/remove-file', clientAuth, async (req, res) =>
   if (!url) return res.status(400).json({ success: false, message: 'Missing file url.' });
 
   try {
+    if (req.auth.role !== 'admin') {
+      const { contact, fields } = await getEnrichedContact(req.params.contactId);
+      const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
+      // Removing an existing file IS an edit to an already-answered
+      // sub-field by definition (a file is there to remove) — same lock
+      // rule as overwriting a filled-in text answer.
+      if (tags.includes('editing locked') && !getGrantedIdsFromFields(fields).includes(qId)) {
+        return res.status(403).json({ success: false, message: LOCKED_MESSAGE });
+      }
+    }
+
     const { fieldId } = await resolveTargetField(question, subField);
     const rawFields = await getRawCustomFields(req.params.contactId);
     const rawValue = rawFields.find(f => f.id === fieldId)?.value;

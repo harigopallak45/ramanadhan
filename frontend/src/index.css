@@ -1,6 +1,6 @@
 /* =====================================================================
-   CENTINL DESIGN SYSTEM — light SaaS aesthetic (Linear / Stripe / Notion
-   inspired): white surfaces, one indigo accent, clean sans typography,
+   CENTINL DESIGN SYSTEM — monochrome professional aesthetic: white
+   surfaces, black/grey accent (no brand colour), clean sans typography,
    soft shadows, generous whitespace. One consistent theme across the
    whole app — the .theme-dark / .theme-light class names are kept on
    every page (zero JSX changes needed) but both now resolve to the same
@@ -14,22 +14,27 @@ html, body, #root { height: 100%; }
 body { margin: 0; }
 
 :root {
-  /* Primary accent — indigo, not brand gold. Variable names are kept as
-     `--gold*` so every existing var(--gold) reference across the app picks
-     up the new color automatically, with no find-and-replace needed. */
-  --gold: #6366f1;
-  --gold-dim: #4f46e5;
-  --gold-wash: rgba(99, 102, 241, 0.08);
-  --gold-border: rgba(99, 102, 241, 0.32);
+  /* Primary accent — near-black, not a brand colour. Variable names are
+     kept as `--gold*` so every existing var(--gold) reference across the
+     app picks up the new colour automatically, with no find-and-replace
+     needed. */
+  --gold: #111113;
+  --gold-dim: #3f3f46;
+  --gold-wash: rgba(0, 0, 0, 0.055);
+  --gold-border: rgba(0, 0, 0, 0.18);
 
-  --success: #16a34a;
-  --success-wash: rgba(22, 163, 74, 0.08);
-  --pending: #d97706;
-  --pending-wash: rgba(217, 119, 6, 0.08);
-  --danger: #dc2626;
-  --danger-wash: rgba(220, 38, 38, 0.08);
-  --info: #2563eb;
-  --info-wash: rgba(37, 99, 235, 0.08);
+  /* Status colours kept for function (pass/fail/in-progress must stay
+     tellable apart at a glance) but muted toward ink tones so they sit
+     quietly inside the grey/black/white system instead of reading as
+     bright "SaaS" colour. */
+  --success: #166534;
+  --success-wash: rgba(22, 101, 52, 0.08);
+  --pending: #92400e;
+  --pending-wash: rgba(146, 64, 14, 0.08);
+  --danger: #991b1b;
+  --danger-wash: rgba(153, 27, 27, 0.08);
+  --info: #374151;
+  --info-wash: rgba(55, 65, 81, 0.08);
 
   /* Kept as a distinct variable (some pages reference --font-serif for
      hierarchy) but now maps to the same Inter family — no serif anywhere. */
@@ -45,7 +50,7 @@ body { margin: 0; }
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
   --shadow-lg: 0 16px 40px rgba(0,0,0,0.10);
-  --shadow-gold: 0 4px 14px rgba(99,102,241,0.22);
+  --shadow-gold: 0 4px 14px rgba(0,0,0,0.18);
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -106,7 +111,7 @@ a { color: inherit; }
 .btn-secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--gold-border); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
 .btn-ghost:hover:not(:disabled) { color: var(--text-main); background: var(--surface-hover); }
-.btn-danger { background: transparent; border-color: rgba(220,38,38,0.28); color: var(--danger); }
+.btn-danger { background: transparent; border-color: rgba(153,27,27,0.28); color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: var(--danger-wash); }
 .btn-sm { padding: 6px 12px; font-size: 12.5px; }
 .btn-icon { padding: 8px; border-radius: var(--r-sm); }
@@ -137,9 +142,9 @@ a { color: inherit; }
 /* ---- Badges ---- */
 .badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.03em; text-transform: uppercase; padding: 4px 9px; border-radius: var(--r-sm); border: 1px solid transparent; white-space: nowrap; }
 .badge--gold { background: var(--gold-wash); color: var(--gold-dim); border-color: var(--gold-border); }
-.badge--success { background: var(--success-wash); color: var(--success); border-color: rgba(22,163,74,0.25); }
-.badge--pending { background: var(--pending-wash); color: var(--pending); border-color: rgba(217,119,6,0.25); }
-.badge--danger { background: var(--danger-wash); color: var(--danger); border-color: rgba(220,38,38,0.25); }
+.badge--success { background: var(--success-wash); color: var(--success); border-color: rgba(22,101,52,0.25); }
+.badge--pending { background: var(--pending-wash); color: var(--pending); border-color: rgba(146,64,14,0.25); }
+.badge--danger { background: var(--danger-wash); color: var(--danger); border-color: rgba(153,27,27,0.25); }
 .badge--neutral { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
 
 /* ---- Progress ---- */
