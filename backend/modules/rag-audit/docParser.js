@@ -7,7 +7,10 @@
 const path = require('path');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
-const { PDFParse } = require('pdf-parse'); // v2 class-based API
+// v1 functional API — deliberately NOT v2 (which pulls in pdfjs-dist and
+// requires Node >=20.16/22.3 for its DOMMatrix/ImageData polyfills; v1 is
+// pure-JS and runs on any Node this app targets).
+const pdfParse = require('pdf-parse');
 
 const MAX_TEXT = 6000; // default cap for evidence docs (keeps prompts bounded)
 
@@ -64,14 +67,8 @@ async function parseBuffer(buffer, filename = '', mimetype = '', opts = {}) {
 
   try {
     if (ext === 'pdf') {
-      const parser = new PDFParse({ data: buffer });
-      let text = '';
-      try {
-        const data = await parser.getText();
-        text = clean(data.text, cap);
-      } finally {
-        await parser.destroy().catch(() => {});
-      }
+      const data = await pdfParse(buffer);
+      const text = clean(data.text, cap);
       // A near-empty PDF text layer usually means a scanned/image PDF.
       if (text.length < 20) return { text, kind: 'pdf', ok: false, note: 'no extractable text (likely scanned image — OCR not enabled)' };
       return { text, kind: 'pdf', ok: true };
