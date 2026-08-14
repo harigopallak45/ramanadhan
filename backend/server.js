@@ -18,6 +18,24 @@ const { RRS_META_FIELDS } = require('./modules/rag-audit/sentinelFields');
 
 const app = express();
 
+// MOUNT-PATH NORMALISATION (MUST RUN BEFORE EVERY ROUTE)
+// cPanel/Passenger serves this app under a sub-path (its "Application URL",
+// e.g. /audit) and does NOT strip that prefix before handing the request to
+// Express — so a request to /audit/api/login arrives here with the prefix
+// still attached and matches none of the '/api/...' routes below.
+// Historically that was worked around by registering every route twice
+// ('/api/x' AND '/hlgp/api/x'); this strips the configured prefix once
+// instead, so the app works at ANY mount point with no per-route changes.
+// Unset (local dev, or a root-mounted deploy) = no rewriting at all.
+const APP_BASE_PATH = (process.env.APP_BASE_PATH || '').replace(/\/+$/, '');
+if (APP_BASE_PATH) {
+    app.use((req, res, next) => {
+        if (req.url === APP_BASE_PATH) req.url = '/';
+        else if (req.url.startsWith(APP_BASE_PATH + '/')) req.url = req.url.slice(APP_BASE_PATH.length);
+        next();
+    });
+}
+
 // ABSOLUTE CORS HANDLING (MUST BE FIRST)
 app.use((req, res, next) => {
     const origin = req.headers.origin || '*';
