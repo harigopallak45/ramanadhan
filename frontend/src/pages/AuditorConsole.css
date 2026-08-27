@@ -112,3 +112,31 @@
   .ac-area-row { grid-template-columns: 1fr; }
   .ac-area-id, .ac-area-mark, .ac-area-status { text-align: left; }
 }
+
+@media (max-width: 640px) {
+  .ac-main { padding: 24px 16px 80px; }
+  .ac-header { padding: 22px 18px; gap: 18px; }
+  .ac-name { font-size: 24px; }
+  .ac-header-right { width: 100%; }
+  /* Each action becomes full-width instead of a cramped wrapped row */
+  .ac-actions { flex-direction: column; align-items: stretch; width: 100%; }
+  .ac-actions > * { width: 100%; }
+
+  .ac-ai-panel { padding: 20px 18px; }
+  .ac-score-big { font-size: 38px; }
+  .ac-stat-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ac-stat-tile { padding: 12px 10px; }
+  .ac-stat-value { font-size: 22px; }
+
+  .ac-console-head { flex-direction: column; align-items: stretch; }
+  .ac-search { width: 100%; }
+
+  .ac-question { padding: 18px 16px; }
+  .ac-question-title { font-size: 15.5px; }
+  /* Evidence cards go single-column — 230px minimum overflows a 375px screen
+     once padding is accounted for. */
+  .ac-files { grid-template-columns: 1fr; }
+
+  .ac-draft-pre { font-size: 11px; padding: 14px; }
+  .ac-full-report-head { flex-direction: column; gap: 12px; }
+}

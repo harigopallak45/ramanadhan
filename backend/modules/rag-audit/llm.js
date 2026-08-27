@@ -33,7 +33,12 @@ const PROVIDERS = {
   groq: {
     url: 'https://api.groq.com/openai/v1/chat/completions',
     apiKey: process.env.GROQ_API_KEY,
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    // Groq retires models on a rolling basis — llama-3.3-70b-versatile was
+    // deprecated 2026-06-17 and now 404s ("model does not exist"). Groq's
+    // own recommended successor is openai/gpt-oss-120b. If this one is ever
+    // retired too, set GROQ_MODEL in the environment rather than editing
+    // code; `GET /v1/models` on the Groq API lists what a key can access.
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     style: 'openai',
     keyRequired: true
   },

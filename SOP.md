@@ -39,7 +39,7 @@
 
 ### Key System Features
 * **No Local Database Architecture:** Operates with GoHighLevel (GHL) CRM as the source of truth. Users are GHL contacts; audit answers and document uploads map to GHL custom fields; roles map to GHL tags (`audit user` / `audit admin`).
-* **AI Compliance Engine (`rag-audit`):** Automated evaluation module leveraging **Groq** (`llama-3.3-70b-versatile`) grounded against official AUSTRAC guidance files indexed locally via a BM25 lexical retriever.
+* **AI Compliance Engine (`rag-audit`):** Automated evaluation module leveraging **Groq** (`openai/gpt-oss-120b`) grounded against official AUSTRAC guidance files indexed locally via a BM25 lexical retriever.
 * **Dual API Mount:** All API paths are mounted at both `/api/...` and `/hlgp/api/...` for production reverse-proxy support.
 
 ---
@@ -239,7 +239,7 @@ Monthly recurring task OR whenever AUSTRAC releases new AML/CTF guidance documen
    ```bash
    curl http://localhost:5001/api/rag-audit/health
    ```
-   *Expected output:* `{"success":true,"configured":true,"model":"llama-3.3-70b-versatile"}`
+   *Expected output:* `{"success":true,"configured":true,"model":"openai/gpt-oss-120b"}`
 
 #### Quality Checklist
 - [ ] `knowledge-index.json` updated with non-zero byte size.

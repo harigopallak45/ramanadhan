@@ -35,7 +35,7 @@ npm run dev          # watch mode
 | `GHL_*_FIELD_ID` | no | custom-field ids (auto-resolved by name if omitted) |
 | `GHL_INVITE_WEBHOOK_URL` | no | optional outbound webhook on invite |
 | `GROQ_API_KEY` | for AI | Groq API key (AI scoring) |
-| `GROQ_MODEL` | no | default `llama-3.3-70b-versatile` |
+| `GROQ_MODEL` | no | default `openai/gpt-oss-120b` |
 | `GROQ_MAX_TOKENS` | no | output reservation (default 4000) |
 | `RAG_DOC_CHAR_BUDGET` | no | document text budget per score (default 12000) |
 | `RAG_GROUND_CHARS` | no | AUSTRAC snippet length per area (default 500) |

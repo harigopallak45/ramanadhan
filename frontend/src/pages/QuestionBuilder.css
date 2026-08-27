@@ -24,5 +24,25 @@
 .qb-empty { text-align: center; padding: 60px 20px; color: var(--text-faint); }
 
 .qb-fields-list { display: flex; flex-direction: column; gap: 10px; }
-.qb-field-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.qb-field-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
 .qb-field-row-main { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+
+@media (max-width: 640px) {
+  .qb-main { padding: 24px 16px 80px; }
+  .qb-head { flex-direction: column; align-items: stretch; }
+  .qb-head .btn { width: 100%; }
+  .qb-title { font-size: 23px; }
+
+  /* Row becomes a 2-line layout: handle + id + title, then actions —
+     the 4-across desktop layout squeezes the title to a few characters. */
+  .qb-row { flex-wrap: wrap; gap: 10px; }
+  .qb-main-col { flex: 1 1 100%; order: 3; }
+  .qb-actions { margin-left: auto; }
+
+  /* Label/type/remove stack instead of cramming into three columns */
+  .qb-field-row-main { grid-template-columns: 1fr; }
+  .qb-two-col { grid-template-columns: 1fr; }
+  .qb-modal-body { padding: 16px 18px 20px; }
+  .qb-modal-head { padding: 18px 18px 0; }
+  .qb-modal-foot { padding: 14px 18px; }
+}

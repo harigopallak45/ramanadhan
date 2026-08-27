@@ -37,13 +37,27 @@
   padding: 6px 12px; border-radius: var(--r-sm); cursor: pointer; font-family: var(--font-sans);
   font-size: 12px; white-space: nowrap; transition: all .15s var(--ease);
 }
-.ad-btn-score:hover { background: rgba(99,102,241,0.16); }
+/* Was rgba(99,102,241,...) — a leftover from the pre-monochrome indigo
+   theme; now follows the shared accent token like everything else. */
+.ad-btn-score:hover { background: var(--gold-wash); border-color: var(--gold-border); }
 
 @media (max-width: 768px) {
   .ad-main { padding: 24px 20px 100px; }
   .ad-table th, .ad-table td { padding-left: 16px; padding-right: 16px; }
   .ad-table th:nth-child(3), .ad-table td:nth-child(3) { display: none; }
   .ad-search-box { width: 100%; }
+}
+
+@media (max-width: 560px) {
+  .ad-main { padding: 20px 14px 90px; }
+  /* Drop the company column too — at 375px the name/email column is
+     otherwise squeezed to a couple of characters. */
+  .ad-table th:nth-child(4), .ad-table td:nth-child(4) { display: none; }
+  .ad-table th, .ad-table td { padding-left: 12px; padding-right: 12px; font-size: 13px; }
+  .ad-head { flex-direction: column; align-items: stretch; gap: 14px; }
+  .ad-head .btn { width: 100%; }
+  .ad-bulk-bar { left: 12px; right: 12px; transform: translateY(100px); width: auto; }
+  .ad-bulk-bar.visible { transform: translateY(0); }
 }
 
 /* ---- Bulk action bar ---- */

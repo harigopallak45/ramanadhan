@@ -44,7 +44,7 @@ hands any engine identical context. Set `local` to keep all data on-machine.
 | --- | --- | --- |
 | `LLM_PROVIDER` | `groq` | `groq` \| `openai` \| `anthropic` \| `local` |
 | `LLM_TIMEOUT_MS` | `60000` | per-call timeout |
-| `GROQ_API_KEY` / `GROQ_MODEL` | — / `llama-3.3-70b-versatile` | provider: groq |
+| `GROQ_API_KEY` / `GROQ_MODEL` | — / `openai/gpt-oss-120b` | provider: groq |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` | provider: openai |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-sonnet-4-6` | provider: anthropic |
 | `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://localhost:11434/v1/chat/completions` / `llama3.1` | provider: local (Ollama/LM Studio/llama.cpp) — no key, no data leaves the machine |
