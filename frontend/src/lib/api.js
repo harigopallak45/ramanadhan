@@ -5,14 +5,21 @@
 // VITE_API_BASE_URL (set in frontend/.env or frontend/.env.production) wins
 // when present, so a build can be pointed at any host — staging, a second
 // client domain, etc — with zero code changes. With no env var set, this
-// falls back to the historical zero-config behaviour: same-origin backend
-// on localhost during `vite dev`, the live amlcompliance.com.au API otherwise.
+// falls back to zero-config behaviour: the standalone dev backend during
+// `vite dev`, and otherwise the app's own origin + mount path.
+//
+// That mount path must NOT be hardcoded. The backend serves this SPA and the
+// API from the same Express process, so the API root is always wherever the
+// app itself is mounted — BASE_URL (from VITE_BASE_PATH at build time), the
+// same value App.jsx feeds to BrowserRouter's basename. Hardcoding a sub-path
+// here silently 404s every request the moment the deploy moves, which is
+// exactly what happened when the '/hlgp' mount was retired in favour of
+// '/audit'.
 export function apiBase() {
   const envBase = import.meta.env.VITE_API_BASE_URL;
   if (envBase) return envBase.replace(/\/+$/, '');
-  return window.location.hostname.includes('localhost')
-    ? 'http://localhost:5001'
-    : 'https://amlcompliance.com.au/hlgp';
+  if (window.location.hostname.includes('localhost')) return 'http://localhost:5001';
+  return (window.location.origin + import.meta.env.BASE_URL).replace(/\/+$/, '');
 }
 
 export function getToken() {
