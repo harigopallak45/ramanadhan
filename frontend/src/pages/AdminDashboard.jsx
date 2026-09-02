@@ -46,6 +46,10 @@ export default function AdminDashboard() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedIds, setSelectedIds] = useState([]);
+  // Admins and clients are the same GHL contacts distinguished only by tag,
+  // so they arrive in one list; this splits the view without a second fetch.
+  const [roleView, setRoleView] = useState('client');
+  const [progress, setProgress] = useState(null);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
@@ -132,27 +136,49 @@ export default function AdminDashboard() {
     catch { setEngine({ configured: false }); }
   }
 
+  const clients = useMemo(() => users.filter((u) => u.role !== 'admin'), [users]);
+  const admins = useMemo(() => users.filter((u) => u.role === 'admin'), [users]);
+  const viewUsers = roleView === 'admin' ? admins : clients;
+
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
     const status = statusFilter.toLowerCase();
-    return users.filter((u) => {
+    return viewUsers.filter((u) => {
       const matchesSearch = !q
         || (u.name || '').toLowerCase().includes(q)
         || (u.email || '').toLowerCase().includes(q)
         || (u.company && u.company.toLowerCase().includes(q));
-      const matchesStatus = status === 'all' || (u.status || '').toLowerCase() === status;
+      // Every admin carries the same 'Admin' status, so the filter only
+      // means anything on the client list.
+      const matchesStatus = roleView === 'admin' || status === 'all' || (u.status || '').toLowerCase() === status;
       return matchesSearch && matchesStatus;
     });
-  }, [users, search, statusFilter]);
+  }, [viewUsers, roleView, search, statusFilter]);
+
+  // Answered/total costs one GHL fetch per client, so it runs after the table
+  // has already painted rather than holding it up. Keyed on the id list so it
+  // re-runs when clients are invited or removed — not on every keystroke in
+  // the search box.
+  const clientIdKey = useMemo(() => clients.map((u) => u.id).sort().join(','), [clients]);
+  useEffect(() => {
+    if (!clientIdKey) { setProgress(null); return undefined; }
+    let cancelled = false;
+    apiFetch('/api/admin/progress-summary', { method: 'POST', body: { contactIds: clientIdKey.split(',') } })
+      .then((d) => { if (!cancelled) setProgress(d); })
+      // A failed aggregate just means no question counts in the headline —
+      // the rest of the dashboard is unaffected, so stay quiet.
+      .catch(() => { if (!cancelled) setProgress(null); });
+    return () => { cancelled = true; };
+  }, [clientIdKey]);
 
   const stats = useMemo(() => {
-    const completed = users.filter((u) => (u.status || '').toLowerCase() === 'completed').length;
+    const completed = clients.filter((u) => (u.status || '').toLowerCase() === 'completed').length;
     // "In progress" only — the legacy page compared against a status value
     // ('pending') the backend never actually sends, so this stat was always
     // stuck at 0. Matching on the real status string fixes that.
-    const active = users.filter((u) => (u.status || '').toLowerCase() === 'in progress').length;
-    return { total: users.length, completed, active, rest: users.length - completed };
-  }, [users]);
+    const active = clients.filter((u) => (u.status || '').toLowerCase() === 'in progress').length;
+    return { total: clients.length, completed, active, rest: clients.length - completed };
+  }, [clients]);
 
   const allFilteredSelected = filteredUsers.length > 0 && filteredUsers.every((u) => selectedIds.includes(u.id));
 
@@ -295,6 +321,14 @@ function closeInviteModal() {
           {loading ? 'Loading clients…' : (
             <>
               <strong>{stats.total}</strong> clients · <strong>{stats.completed}</strong> completed · <strong>{stats.active}</strong> awaiting submission
+              {progress && progress.total > 0 && (
+                <> · <strong>{progress.answered}</strong> of <strong>{progress.total}</strong> questions answered
+                  {' '}(<strong>{progress.total - progress.answered}</strong> remaining)</>
+              )}
+              {progress && progress.failed > 0 && (
+                <span className="ad-summary-warn"> · {progress.failed} skipped</span>
+              )}
+              {' · '}<strong>{admins.length}</strong> {admins.length === 1 ? 'admin' : 'admins'}
             </>
           )}
         </div>
@@ -302,21 +336,49 @@ function closeInviteModal() {
         <div className="card ad-table-card">
           <div className="ad-table-head">
             <div>
-              <h2 className="display" style={{ fontSize: 22 }}>Clients</h2>
-              <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Pick a client, then run their AI score or open their file.</div>
+              <div className="ad-roleswitch" role="tablist" aria-label="Account type">
+                {[
+                  { key: 'client', label: 'Clients', count: clients.length },
+                  { key: 'admin', label: 'Admins', count: admins.length }
+                ].map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={roleView === v.key}
+                    className={`ad-roleswitch-btn${roleView === v.key ? ' active' : ''}`}
+                    // Selections don't carry across — a checked row in the
+                    // other list would silently join the next bulk action.
+                    onClick={() => { setRoleView(v.key); setSelectedIds([]); }}
+                  >
+                    {v.label}<span className="ad-roleswitch-count">{v.count}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="muted" style={{ fontSize: 13, marginTop: 10 }}>
+                {roleView === 'admin'
+                  ? 'Administrators can see every client file and run scores. They have no audit of their own.'
+                  : 'Pick a client, then run their AI score or open their file.'}
+              </div>
             </div>
             <div className="ad-table-controls">
-              <select className="select ad-status-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="all">All Statuses</option>
-                <option value="completed">Completed</option>
-                <option value="in progress">In Progress</option>
-                <option value="admin">Admin</option>
-              </select>
+              {roleView === 'client' && (
+                <select className="select ad-status-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="all">All Statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="in progress">In Progress</option>
+                  <option value="partial">Partial</option>
+                </select>
+              )}
               <div className="ad-search-box">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-                <input className="input" type="text" placeholder="Search entities…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input" type="text"
+                  placeholder={roleView === 'admin' ? 'Search admins…' : 'Search entities…'}
+                  value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
-              <Button variant="primary" onClick={() => setInviteOpen(true)}>+ Invite Client</Button>
+              <Button variant="primary" onClick={() => { setInviteForm({ ...EMPTY_INVITE, role: roleView }); setInviteOpen(true); }}>
+                {roleView === 'admin' ? '+ Invite Admin' : '+ Invite Client'}
+              </Button>
             </div>
           </div>
 
@@ -330,7 +392,9 @@ function closeInviteModal() {
 
           {!loading && loadError && <div className="ad-empty">Couldn't connect to the server. {loadError}</div>}
 
-          {!loading && !loadError && !filteredUsers.length && <div className="ad-empty">No clients match your search.</div>}
+          {!loading && !loadError && !filteredUsers.length && (
+            <div className="ad-empty">No {roleView === 'admin' ? 'admins' : 'clients'} match your search.</div>
+          )}
 
           {!loading && !loadError && filteredUsers.length > 0 && (
             <table className="ad-table">
@@ -339,7 +403,7 @@ function closeInviteModal() {
                   <th style={{ width: 36 }}>
                     <input type="checkbox" className="ad-checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
                   </th>
-                  <th>Client</th>
+                  <th>{roleView === 'admin' ? 'Administrator' : 'Client'}</th>
                   <th>Company</th>
                   <th>Audit status</th>
                   <th>Actions</th>

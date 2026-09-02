@@ -10,8 +10,27 @@
 .ad-engine-chip.off { background: var(--danger-wash); color: var(--danger); border-color: rgba(153,27,27,0.3); }
 
 /* ---- Summary line (plain text, no boxes) ---- */
-.ad-summary-line { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; }
+.ad-summary-line { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; line-height: 1.7; }
 .ad-summary-line strong { color: var(--text-main); font-weight: 600; }
+.ad-summary-line .ad-summary-warn { color: var(--pending); }
+
+/* ---- Clients / Admins switch ---- */
+.ad-roleswitch { display: inline-flex; gap: 4px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); }
+.ad-roleswitch-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: var(--r-sm);
+  background: transparent; border: 0; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500; color: var(--text-dim);
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.ad-roleswitch-btn:hover { color: var(--text-main); }
+.ad-roleswitch-btn.active { background: var(--surface); color: var(--text-main); box-shadow: var(--shadow-sm); }
+.ad-roleswitch-count {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1;
+  padding: 3px 6px; border-radius: var(--r-full);
+  background: var(--gold-wash); color: var(--text-dim);
+}
+.ad-roleswitch-btn.active .ad-roleswitch-count { background: var(--gold); color: #ffffff; }
 
 /* ---- Table card ---- */
 .ad-table-card { overflow: hidden; }

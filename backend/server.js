@@ -62,47 +62,41 @@ app.use((req, res, next) => {
     next();
 });
 
-// Production Page Redirect Middleware
+// Legacy split-deploy fallback. Before the frontend was folded into this
+// process, page routes lived on a separate host and this middleware bounced
+// them there whenever no build was present locally.
+//
+// LEGACY_FRONTEND_URL is now opt-in and unset by default, because the host
+// it used to hardcode was retired and every one of these redirects landed on
+// a 404 — turning "the frontend isn't built" into a total outage that looked
+// like a DNS problem. With it unset we fall through to the SPA catch-all's
+// honest 503, which names the actual fix.
+const LEGACY_FRONTEND_URL = normalizeOrigin(process.env.LEGACY_FRONTEND_URL);
+
 app.use((req, res, next) => {
-    // Check if a built React frontend exists on disk (frontend/ is now a Vite
-    // app; `npm run build` produces frontend/dist/index.html — combined
-    // deployments always have this, so this fallback only fires if the
-    // backend was deployed without ever building the frontend).
+    if (!LEGACY_FRONTEND_URL) return next();
+
+    // Only ever fires when this deploy has no built frontend of its own.
     const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/dist/index.html'));
+    if (frontendExists) return next();
 
-    if (!frontendExists) {
-        const path = req.path.toLowerCase();
-        
-        // Skip API routes
-        if (path.includes('/api/')) {
-            return next();
-        }
+    const reqPath = req.path.toLowerCase();
+    if (reqPath.includes('/api/')) return next();
 
-        const normalizedPath = path.replace(/\.html$/, '').replace(/\/$/, '');
-        const queryString = req.url.split('?')[1];
-        const suffix = queryString ? `?${queryString}` : '';
+    const normalizedPath = reqPath.replace(/\.html$/, '').replace(/\/$/, '');
+    const queryString = req.url.split('?')[1];
+    const suffix = queryString ? `?${queryString}` : '';
 
-        // Match Admin routes
-        if (normalizedPath.endsWith('/admin')) {
-            return res.redirect(302, `https://austrac.amlcompliance.com.au/audit/admin${suffix}`);
-        }
-
-        // Match Entity routes
-        if (normalizedPath.endsWith('/entity')) {
-            return res.redirect(302, `https://austrac.amlcompliance.com.au/audit/entity${suffix}`);
-        }
-
-        // Match Audit routes
-        if (normalizedPath.endsWith('/audit')) {
-            return res.redirect(302, `https://austrac.amlcompliance.com.au/audit/audit${suffix}`);
-        }
-
-        // Match Login/Auth/Home routes
-        if (normalizedPath === '' || normalizedPath === '/hlgp' || normalizedPath.endsWith('/login') || normalizedPath.endsWith('/login-page') || normalizedPath.endsWith('/auth')) {
-            return res.redirect(302, `https://austrac.amlcompliance.com.au/audit/login-page${suffix}`);
+    for (const page of ['admin', 'entity', 'audit']) {
+        if (normalizedPath.endsWith(`/${page}`)) {
+            return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/${page}${suffix}`);
         }
     }
-    
+
+    if (normalizedPath === '' || normalizedPath.endsWith('/login') || normalizedPath.endsWith('/login-page') || normalizedPath.endsWith('/auth')) {
+        return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/login-page${suffix}`);
+    }
+
     next();
 });
 
@@ -119,20 +113,39 @@ const GHL_API_KEY = process.env.GHL_API_KEY;
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
-// Public client-facing frontend domain. Email links (invite / reset) MUST point
-// here, NOT at the backend/API host (amlcompliance.com.au/hlgp).
-const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://austrac.amlcompliance.com.au').replace(/\/+$/, '');
-
-// Helper to determine Frontend URL based on environment
-function getFrontendUrl() {
-    // Local development: the backend also serves the frontend on the same origin,
-    // so links should stay on localhost for testing.
-    const backendUrl = process.env.BACKEND_URL || '';
-    if (backendUrl.includes('localhost') || backendUrl.includes('127.0.0.1')) {
-        return backendUrl.replace(/\/+$/, '');
+// Reduce a configured URL to a bare origin. Every caller of getFrontendUrl()
+// appends its own path (e.g. `${base}/audit/reset`), so a value carrying a
+// path silently produces doubled URLs — a FRONTEND_URL of
+// 'https://host/auditapp/login' once yielded '/auditapp/login/audit/reset',
+// which no route matched. Stripping the path here makes that unrepresentable.
+function normalizeOrigin(raw) {
+    const value = String(raw || '').trim().replace(/\/+$/, '');
+    if (!value) return '';
+    try {
+        return new URL(value).origin;
+    } catch {
+        return value; // not absolute — leave it alone rather than guess
     }
-    // Everything else (production / staging) → always the frontend domain.
-    return FRONTEND_URL;
+}
+
+// Public origin that emailed links (invite / reset) point at. This is the
+// single source of truth: nothing else is sniffed to decide it. Unset in
+// development, we fall back to this server's own origin, which is correct
+// because the backend serves the SPA too; unset in production we warn
+// loudly at boot instead of quietly emailing broken links.
+const FRONTEND_URL = normalizeOrigin(process.env.FRONTEND_URL);
+const DEV_FRONTEND_URL = `http://localhost:${process.env.PORT || 5001}`;
+
+function getFrontendUrl() {
+    if (FRONTEND_URL) return FRONTEND_URL;
+    return DEV_FRONTEND_URL;
+}
+
+if (!FRONTEND_URL && process.env.NODE_ENV === 'production') {
+    console.warn(
+        `[CONFIG] FRONTEND_URL is not set. Invite and password-reset emails will link to ${DEV_FRONTEND_URL}, ` +
+        'which nobody outside this server can open. Set FRONTEND_URL to the public origin, e.g. https://amlcompliance.com.au'
+    );
 }
 
 let PASSWORD_FIELD_ID = process.env.GHL_PASSWORD_FIELD_ID || 'audit_password'; 
@@ -526,8 +539,13 @@ app.get(/.*\/(reset-password|reset)(\.html)?\/?$/, (req, res, next) => {
         }
         try {
             jwt.verify(token, JWT_SECRET);
-            const frontendUrl = 'https://austrac.amlcompliance.com.au';
-            return res.redirect(302, `${frontendUrl}/audit/reset?token=${encodeURIComponent(token)}`);
+            // Same legacy split-deploy path as the middleware above; without
+            // a legacy host configured there is nowhere to send them, so say
+            // so rather than redirect into a 404.
+            if (!LEGACY_FRONTEND_URL) {
+                return res.status(503).send('Frontend not built. Run `npm run build` in the frontend/ directory.');
+            }
+            return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/reset?token=${encodeURIComponent(token)}`);
         } catch (err) {
             return res.status(400).send('This secure link has expired or is invalid.');
         }
@@ -575,7 +593,10 @@ const adminUIAuth = (req, res, next) => {
 app.get(['/api/config', '/hlgp/api/config'], (req, res) => {
     res.json({ 
         success: true, 
-        backendUrl: process.env.BACKEND_URL || '/hlgp' 
+        // Falls back to this app's own mount point rather than the retired
+        // '/hlgp' one, so a deploy that never sets BACKEND_URL still points
+        // callers at a path that exists.
+        backendUrl: process.env.BACKEND_URL || APP_BASE_PATH || '/'
     });
 });
 
@@ -672,6 +693,70 @@ app.get(['/api/admin/users', '/hlgp/api/admin/users'], adminAuth, async (req, re
         console.error('[ADMIN FETCH ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch users' });
     }
+});
+
+// Admin: aggregate questionnaire progress across a set of clients.
+//
+// Deliberately a separate call from /api/admin/users rather than extra
+// fields on each row: answered counts need every contact's custom fields,
+// which GHL's bulk list endpoint does not return, so this costs one fetch
+// per client. Splitting it out lets the dashboard table paint immediately
+// and fill the headline counts in when they arrive, instead of holding the
+// whole page hostage to the slowest lookup.
+app.post(['/api/admin/progress-summary', '/hlgp/api/admin/progress-summary'], adminAuth, async (req, res) => {
+    const ids = Array.isArray(req.body?.contactIds) ? req.body.contactIds.filter(Boolean) : [];
+    if (!ids.length) return res.json({ success: true, clients: 0, answered: 0, total: 0, failed: 0 });
+
+    const MAX = parseInt(process.env.ADMIN_SUMMARY_MAX_CLIENTS || '250', 10);
+    const targets = ids.slice(0, MAX);
+    const CONCURRENCY = 5;
+    const assignmentFieldId = raAssignments.peekAssignmentFieldId();
+
+    // Same recipe /api/client/submit uses to decide partial vs complete, so
+    // the dashboard headline and the "submitted partial" tag can never
+    // disagree about what counts as answered.
+    async function measure(contactId) {
+        const { fields } = await raGetEnrichedContact(contactId);
+        const assignedIds = assignmentFieldId
+            ? raAssignments.parseAssignedIds(fields.find(f => f.id === assignmentFieldId)?.value)
+            : null;
+        const groups = raGroupResponses(fields);
+        const active = raQuestionBank.listActive(assignedIds);
+        const done = active.filter(q => {
+            const g = groups[q.id];
+            return g && (g.answers.length || g.files.length);
+        }).length;
+        return { done, size: active.length };
+    }
+
+    let answered = 0, total = 0, failed = 0, counted = 0;
+    const queue = [...targets];
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length) {
+            const contactId = queue.shift();
+            try {
+                const { done, size } = await measure(contactId);
+                answered += done;
+                total += size;
+                counted += 1;
+            } catch (err) {
+                // One unreadable contact shouldn't sink the whole headline —
+                // count it as skipped and carry on.
+                failed += 1;
+                console.warn(`[ADMIN SUMMARY] Skipped ${contactId}:`, err.response?.data?.message || err.message);
+            }
+        }
+    }));
+
+    res.json({
+        success: true,
+        clients: counted,
+        answered,
+        total,
+        failed,
+        truncated: ids.length > targets.length
+    });
 });
 
 // Admin: Fetch single user details from GHL
@@ -1209,6 +1294,9 @@ app.get(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
         if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
         res.json({ success: true, account: toAccount(contact, req.user.role) });
     } catch (error) {
+        if (error.response?.status === 404) {
+            return res.status(404).json({ success: false, message: 'Account not found.' });
+        }
         console.error('[ME ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to load your account.' });
     }
@@ -1247,6 +1335,9 @@ app.patch(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
         });
         res.json({ success: true, message: 'Profile updated.', account: toAccount(fresh.data.contact, req.user.role) });
     } catch (error) {
+        if (error.response?.status === 404) {
+            return res.status(404).json({ success: false, message: 'Account not found.' });
+        }
         console.error('[ME UPDATE ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to save your profile.' });
     }
@@ -1288,6 +1379,9 @@ app.post(['/api/me/password', '/hlgp/api/me/password'], verifyClientToken, async
 
         res.json({ success: true, message: 'Password changed.' });
     } catch (error) {
+        if (error.response?.status === 404) {
+            return res.status(404).json({ success: false, message: 'Account not found.' });
+        }
         console.error('[ME PASSWORD ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to change your password.' });
     }
@@ -1597,9 +1691,23 @@ async function runReminderSweep() {
     }
 }
 
-// First sweep shortly after boot (so a restart doesn't wait a full day to
-// catch up), then once every 24h for the life of the process.
-setTimeout(runReminderSweep, 60 * 1000);
-setInterval(runReminderSweep, 24 * 60 * 60 * 1000);
+// The sweep emails real clients, so running this server on a laptop against
+// the production GHL location must not trigger it — a plain `node server.js`
+// for local testing would otherwise mail everyone 60 seconds in. Treated as a
+// deployment only when NODE_ENV says production or FRONTEND_URL is configured
+// (a dev .env has neither); REMINDER_SWEEP=on|off forces it either way.
+const REMINDER_SWEEP = String(process.env.REMINDER_SWEEP || '').trim().toLowerCase();
+const reminderSweepEnabled = REMINDER_SWEEP
+    ? ['1', 'on', 'true', 'yes'].includes(REMINDER_SWEEP)
+    : (process.env.NODE_ENV === 'production' || !!FRONTEND_URL);
+
+if (reminderSweepEnabled) {
+    // First sweep shortly after boot (so a restart doesn't wait a full day to
+    // catch up), then once every 24h for the life of the process.
+    setTimeout(runReminderSweep, 60 * 1000);
+    setInterval(runReminderSweep, 24 * 60 * 60 * 1000);
+} else {
+    console.log('[REMINDERS] Follow-up sweep is OFF (no NODE_ENV=production and no FRONTEND_URL). Set REMINDER_SWEEP=on to force it on.');
+}
 
 app.listen(PORT, () => console.log(`🚀 Audit Portal Backend running on port ${PORT}`));
