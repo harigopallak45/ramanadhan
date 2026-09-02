@@ -222,6 +222,19 @@ a { color: inherit; }
 .usermenu-item:hover { background: var(--surface-hover); color: var(--text-main); }
 .usermenu-item--danger:hover { background: var(--danger-wash); color: var(--danger); }
 
+/* On narrow screens the topbar wraps and the trigger can end up near the left
+   edge, where a right-anchored 250px panel hangs off-screen. Pin it to the
+   viewport gutters instead of to the trigger. .topbar is position:sticky, so
+   it's the containing block once .usermenu stops being one. */
+@media (max-width: 600px) {
+  .usermenu { position: static; }
+  /* Matches the specificity of the .usermenu--right/left rules above, which
+     would otherwise keep winning and pin the panel to the viewport edge. */
+  .usermenu--right .usermenu-panel,
+  .usermenu--left .usermenu-panel { left: 12px; right: 12px; min-width: 0; }
+  .usermenu-name { max-width: 42vw; }
+}
+
 /* ---- Utility ---- */
 .divider { height: 1px; background: var(--border); border: none; margin: var(--sp-4) 0; }
 .skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: var(--r-sm); }

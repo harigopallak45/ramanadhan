@@ -140,6 +140,10 @@ export default function Profile() {
             <section className="card profile-card">
               <h2>Password</h2>
               <form onSubmit={changePassword}>
+                {/* Password managers need a username to file the new password
+                    under, and Chrome warns when a password form has none.
+                    Hidden, read-only, and never submitted anywhere. */}
+                <input type="text" name="username" autoComplete="username" value={account.email} readOnly hidden />
                 <Field label="Current password">
                   <TextInput type="password" required autoComplete="current-password" value={pw.currentPassword}
                     onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} />

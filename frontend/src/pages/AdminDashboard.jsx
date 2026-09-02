@@ -421,7 +421,24 @@ function closeInviteModal() {
                       <div className="muted" style={{ fontSize: 12 }}>{user.email}</div>
                     </td>
                     <td>{user.company && user.company !== 'N/A' ? user.company : '—'}</td>
-                    <td><Badge tone={statusTone(user.status)}>{user.status}</Badge></td>
+                    <td>
+                      <div className="ad-status-cell">
+                        <Badge tone={statusTone(user.status)}>{user.status}</Badge>
+                        {roleView === 'client' && (() => {
+                          // Arrives after the table paints, so render nothing
+                          // rather than a flash of "0/0" while it's in flight.
+                          const p = progress?.perClient?.[user.id];
+                          if (!p || !p.total) return null;
+                          const pct = Math.round((p.answered / p.total) * 100);
+                          return (
+                            <span className="ad-progress" title={`${p.answered} of ${p.total} answered · ${p.total - p.answered} remaining`}>
+                              <span className="ad-progress-bar"><span className="ad-progress-fill" style={{ width: `${pct}%` }} /></span>
+                              <span className="ad-progress-text">{p.answered}/{p.total}</span>
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </td>
                     <td className="ad-row-actions">
                       <button className="ad-btn-score" onClick={() => openScorecard(user)}>✦ AI Score</button>
                       <Link className="btn btn-secondary btn-sm" to={`/entity/${user.id}`}>View</Link>

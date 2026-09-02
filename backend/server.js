@@ -730,6 +730,9 @@ app.post(['/api/admin/progress-summary', '/hlgp/api/admin/progress-summary'], ad
     }
 
     let answered = 0, total = 0, failed = 0, counted = 0;
+    // Per-client breakdown as well as the roll-up, so the table can show each
+    // row's own answered/total without a second pass over the same fetches.
+    const perClient = {};
     const queue = [...targets];
 
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
@@ -737,6 +740,7 @@ app.post(['/api/admin/progress-summary', '/hlgp/api/admin/progress-summary'], ad
             const contactId = queue.shift();
             try {
                 const { done, size } = await measure(contactId);
+                perClient[contactId] = { answered: done, total: size };
                 answered += done;
                 total += size;
                 counted += 1;
@@ -755,6 +759,7 @@ app.post(['/api/admin/progress-summary', '/hlgp/api/admin/progress-summary'], ad
         answered,
         total,
         failed,
+        perClient,
         truncated: ids.length > targets.length
     });
 });
@@ -1270,6 +1275,36 @@ const verifyClientToken = (req, res, next) => {
 // record (answers, permissions) that drives the questionnaire.
 // =====================================================================
 
+// Turn a GHL API failure into an honest client-facing response. GHL says
+// exactly what went wrong — "this location does not allow duplicated
+// contacts", naming the field and the contact already using it — and
+// collapsing that into a blanket 500 leaves the user staring at a form that
+// just says "failed" with no way to act on it.
+function respondGhlError(res, error, fallbackMessage, logLabel) {
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    if (status === 404) {
+        return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    if (status === 400 || status === 409 || status === 422) {
+        const field = data?.meta?.matchingField;
+        if (field) {
+            const owner = data.meta.contactName ? ` (${data.meta.contactName})` : '';
+            return res.status(409).json({
+                success: false,
+                message: `That ${field} already belongs to another contact${owner}. Use a different ${field}, or ask an administrator to merge the duplicate.`,
+                field
+            });
+        }
+        return res.status(400).json({ success: false, message: data?.message || fallbackMessage });
+    }
+
+    console.error(`[${logLabel}]:`, data || error.message);
+    return res.status(500).json({ success: false, message: fallbackMessage });
+}
+
 // Narrow a GHL contact down to the account fields the profile page shows.
 function toAccount(contact, role) {
     const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
@@ -1294,11 +1329,7 @@ app.get(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
         if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
         res.json({ success: true, account: toAccount(contact, req.user.role) });
     } catch (error) {
-        if (error.response?.status === 404) {
-            return res.status(404).json({ success: false, message: 'Account not found.' });
-        }
-        console.error('[ME ERROR]:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: 'Failed to load your account.' });
+        respondGhlError(res, error, 'Failed to load your account.', 'ME ERROR');
     }
 });
 
@@ -1335,11 +1366,7 @@ app.patch(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
         });
         res.json({ success: true, message: 'Profile updated.', account: toAccount(fresh.data.contact, req.user.role) });
     } catch (error) {
-        if (error.response?.status === 404) {
-            return res.status(404).json({ success: false, message: 'Account not found.' });
-        }
-        console.error('[ME UPDATE ERROR]:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: 'Failed to save your profile.' });
+        respondGhlError(res, error, 'Failed to save your profile.', 'ME UPDATE ERROR');
     }
 });
 
@@ -1379,11 +1406,7 @@ app.post(['/api/me/password', '/hlgp/api/me/password'], verifyClientToken, async
 
         res.json({ success: true, message: 'Password changed.' });
     } catch (error) {
-        if (error.response?.status === 404) {
-            return res.status(404).json({ success: false, message: 'Account not found.' });
-        }
-        console.error('[ME PASSWORD ERROR]:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: 'Failed to change your password.' });
+        respondGhlError(res, error, 'Failed to change your password.', 'ME PASSWORD ERROR');
     }
 });
 
