@@ -1,0 +1,305 @@
+/* =====================================================================
+   CENTINL DESIGN SYSTEM — monochrome professional aesthetic: white
+   surfaces, black/grey accent (no brand colour), clean sans typography,
+   soft shadows, generous whitespace. One consistent theme across the
+   whole app — the .theme-dark / .theme-light class names are kept on
+   every page (zero JSX changes needed) but both now resolve to the same
+   light palette below.
+   ===================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; }
+
+:root {
+  /* Primary accent — near-black, not a brand colour. Variable names are
+     kept as `--gold*` so every existing var(--gold) reference across the
+     app picks up the new colour automatically, with no find-and-replace
+     needed. */
+  --gold: #111113;
+  --gold-dim: #3f3f46;
+  --gold-wash: rgba(0, 0, 0, 0.055);
+  --gold-border: rgba(0, 0, 0, 0.18);
+
+  /* Status colours kept for function (pass/fail/in-progress must stay
+     tellable apart at a glance) but muted toward ink tones so they sit
+     quietly inside the grey/black/white system instead of reading as
+     bright "SaaS" colour. */
+  --success: #166534;
+  --success-wash: rgba(22, 101, 52, 0.08);
+  --pending: #92400e;
+  --pending-wash: rgba(146, 64, 14, 0.08);
+  --danger: #991b1b;
+  --danger-wash: rgba(153, 27, 27, 0.08);
+  --info: #374151;
+  --info-wash: rgba(55, 65, 81, 0.08);
+
+  /* Kept as a distinct variable (some pages reference --font-serif for
+     hierarchy) but now maps to the same Inter family — no serif anywhere. */
+  --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px;
+
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-full: 999px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,0.10);
+  --shadow-gold: 0 4px 14px rgba(0,0,0,0.18);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Both theme classes resolve to the same light palette — kept as separate
+   selectors only so no page needs its className changed. */
+.theme-dark, .theme-light {
+  --bg: #ffffff;
+  --bg-raised: #fafafa;
+  --surface: #ffffff;
+  --surface-hover: #f7f7f6;
+  --surface-2: #f2f2f0;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --text-main: #1a1a1a;
+  --text-dim: #6b6b68;
+  --text-faint: #9a9a96;
+  background: var(--bg);
+  color: var(--text-main);
+}
+
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; }
+
+/* ---- Layout primitives ---- */
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 var(--sp-6); }
+.row { display: flex; align-items: center; }
+.between { display: flex; align-items: center; justify-content: space-between; }
+.col { display: flex; flex-direction: column; }
+.gap-1 { gap: var(--sp-1); } .gap-2 { gap: var(--sp-2); }
+.gap-3 { gap: var(--sp-3); } .gap-4 { gap: var(--sp-4); } .gap-6 { gap: var(--sp-6); }
+
+/* ---- Typography ---- */
+.display { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+.muted { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+
+/* ---- Surfaces ---- */
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm); transition: border-color .2s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease);
+}
+.card--interactive:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.card--gold { border-color: var(--gold-border); box-shadow: var(--shadow-gold); }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  font-family: var(--font-sans); font-size: 13.5px; font-weight: 500;
+  padding: 9px 16px; border-radius: var(--r-sm); border: 1px solid transparent;
+  cursor: pointer; transition: all .15s var(--ease); white-space: nowrap; text-decoration: none; line-height: 1;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: var(--gold); color: #ffffff; font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: var(--gold-dim); box-shadow: var(--shadow-gold); }
+.btn-secondary { background: var(--surface); border-color: var(--border-strong); color: var(--text-main); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--gold-border); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn-ghost:hover:not(:disabled) { color: var(--text-main); background: var(--surface-hover); }
+.btn-danger { background: transparent; border-color: rgba(153,27,27,0.28); color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-wash); }
+.btn-sm { padding: 6px 12px; font-size: 12.5px; }
+.btn-icon { padding: 8px; border-radius: var(--r-sm); }
+.btn-block { width: 100%; }
+
+/* ---- Form controls ---- */
+.field { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.label { font-size: 13px; font-weight: 500; color: var(--text-main); }
+.hint { font-size: 12px; color: var(--text-faint); }
+.input, .textarea, .select {
+  width: 100%; background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); padding: 10px 13px; color: var(--text-main);
+  font-family: var(--font-sans); font-size: 14px; outline: none;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+.input:focus, .textarea:focus, .select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-wash); }
+.input::placeholder, .textarea::placeholder { color: var(--text-faint); }
+.select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6b68' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle .track { position: absolute; inset: 0; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-full); transition: background .15s var(--ease); cursor: pointer; }
+.toggle .track::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); border-radius: 50%; transition: transform .15s var(--ease), background .15s var(--ease); }
+.toggle input:checked + .track { background: var(--gold); border-color: var(--gold); }
+.toggle input:checked + .track::before { transform: translateX(18px); }
+
+/* ---- Badges ---- */
+.badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.03em; text-transform: uppercase; padding: 4px 9px; border-radius: var(--r-sm); border: 1px solid transparent; white-space: nowrap; }
+.badge--gold { background: var(--gold-wash); color: var(--gold-dim); border-color: var(--gold-border); }
+.badge--success { background: var(--success-wash); color: var(--success); border-color: rgba(22,101,52,0.25); }
+.badge--pending { background: var(--pending-wash); color: var(--pending); border-color: rgba(146,64,14,0.25); }
+.badge--danger { background: var(--danger-wash); color: var(--danger); border-color: rgba(153,27,27,0.25); }
+.badge--neutral { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
+
+/* ---- Progress ---- */
+.progress { height: 6px; background: var(--surface-2); border-radius: var(--r-full); overflow: hidden; }
+.progress > div { height: 100%; background: var(--gold); border-radius: var(--r-full); transition: width .4s var(--ease); }
+
+/* ---- Modal / overlay ---- */
+.overlay { position: fixed; inset: 0; background: rgba(20,20,20,0.4); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; }
+
+/* ---- Toast ---- */
+.toast-stack { position: fixed; bottom: var(--sp-6); right: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-2); z-index: 300; }
+.toast { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 16px; box-shadow: var(--shadow-lg); font-size: 13.5px; display: flex; align-items: center; gap: 10px; animation: toast-in .25s var(--ease); }
+.toast--success { border-left: 3px solid var(--success); }
+.toast--error { border-left: 3px solid var(--danger); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---- Nav ---- */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); z-index: 50; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand img { height: 22px; display: block; filter: brightness(0) saturate(100%); }
+.nav-tabs { display: flex; gap: 4px; }
+.nav-tab { font-family: var(--font-sans); font-size: 13.5px; font-weight: 500; color: var(--text-dim); padding: 8px 14px; border-radius: var(--r-sm); text-decoration: none; transition: all .15s var(--ease); }
+.nav-tab:hover { color: var(--text-main); background: var(--surface-hover); }
+.nav-tab.active { color: var(--gold-dim); background: var(--gold-wash); }
+
+/* ---- User menu (topbar + client portal header) ---- */
+.usermenu { position: relative; }
+
+.usermenu-trigger {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px 5px 5px; border-radius: var(--r-full);
+  background: transparent; border: 1px solid transparent; cursor: pointer;
+  color: var(--text-main); font-family: inherit; font-size: 13px;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.usermenu-trigger:hover { background: var(--surface-hover); border-color: var(--border); }
+.usermenu-trigger[aria-expanded="true"] { background: var(--surface-hover); border-color: var(--border-strong); }
+
+.usermenu-avatar {
+  width: 26px; height: 26px; border-radius: var(--r-full); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gold); color: #ffffff;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+}
+.usermenu-avatar--lg { width: 38px; height: 38px; font-size: 13px; }
+
+.usermenu-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.usermenu-caret { color: var(--text-faint); flex-shrink: 0; }
+
+.usermenu-panel {
+  position: absolute; top: calc(100% + 8px); min-width: 250px; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.usermenu--right .usermenu-panel { right: 0; }
+.usermenu--left .usermenu-panel { left: 0; }
+
+.usermenu-head { display: flex; align-items: center; gap: 11px; padding: 14px; }
+.usermenu-ident { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.usermenu-ident-name { font-size: 13.5px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usermenu-ident-email { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usermenu-ident-company { font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.usermenu-role { padding: 0 14px 12px; }
+.usermenu-actions { border-top: 1px solid var(--border); padding: 6px; display: flex; flex-direction: column; }
+
+.usermenu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  background: transparent; border: 0; cursor: pointer; text-align: left; text-decoration: none;
+  font-family: inherit; font-size: 13px; color: var(--text-dim);
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.usermenu-item:hover { background: var(--surface-hover); color: var(--text-main); }
+.usermenu-item--danger:hover { background: var(--danger-wash); color: var(--danger); }
+
+/* On narrow screens the topbar wraps and the trigger can end up near the left
+   edge, where a right-anchored 250px panel hangs off-screen. Pin it to the
+   viewport gutters instead of to the trigger. .topbar is position:sticky, so
+   it's the containing block once .usermenu stops being one. */
+@media (max-width: 600px) {
+  .usermenu { position: static; }
+  /* Matches the specificity of the .usermenu--right/left rules above, which
+     would otherwise keep winning and pin the panel to the viewport edge. */
+  .usermenu--right .usermenu-panel,
+  .usermenu--left .usermenu-panel { left: 12px; right: 12px; min-width: 0; }
+  .usermenu-name { max-width: 42vw; }
+}
+
+/* ---- Utility ---- */
+.divider { height: 1px; background: var(--border); border: none; margin: var(--sp-4) 0; }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: var(--r-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ---- Accessibility ---- */
+/* A visible focus ring for keyboard users only (mouse clicks don't get it),
+   so the app stays operable without a mouse — the previous styling relied
+   entirely on :hover, which leaves keyboard navigation with no indicator. */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Respect the OS "reduce motion" setting — the shimmer/fade/slide
+   animations here are decorative, so drop them rather than risk
+   discomfort for motion-sensitive users. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .topbar { padding: 14px 20px; }
+}
+
+@media (max-width: 720px) {
+  .shell { padding: 0 var(--sp-4); }
+
+  /* Topbar stacks so long nav-tab rows stop squashing the brand */
+  .topbar { flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+  .nav-tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  .nav-tab { flex: none; }
+
+  /* iOS Safari zooms the page in when a focused input's text is under
+     16px — bumping just the mobile size prevents that jarring jump. */
+  .input, .textarea, .select { font-size: 16px; padding: 12px 14px; }
+
+  /* Comfortable touch targets (WCAG 2.5.5 asks for ~44px) */
+  .btn { min-height: 44px; padding: 11px 18px; }
+  .btn-sm { min-height: 38px; }
+  .btn-icon { min-width: 44px; min-height: 44px; }
+
+  .modal { max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .overlay { padding: 0; align-items: flex-end; }
+
+  .toast-stack { left: var(--sp-4); right: var(--sp-4); bottom: var(--sp-4); }
+  .toast { width: 100%; }
+}
+
+/* Any table in the app scrolls sideways inside its own container rather
+   than forcing the whole page to scroll horizontally. */
+@media (max-width: 720px) {
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

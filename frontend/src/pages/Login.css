@@ -1,0 +1,57 @@
+.auth-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: #fafafa; padding: 24px;
+}
+.auth-card {
+  width: 100%; max-width: 420px; background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.08); border-top: 2px solid var(--gold);
+  padding: 44px; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.08);
+  animation: authFadeIn .4s var(--ease);
+}
+@keyframes authFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.auth-brand { text-align: center; margin-bottom: 36px; }
+.auth-brand img { height: 26px; margin-bottom: 22px; filter: brightness(0) saturate(100%); }
+.auth-brand h1 { font-family: var(--font-sans); font-size: 24px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.02em; color: #1a1a1a; }
+.auth-brand p { font-family: var(--font-mono); font-size: 10px; color: var(--gold-dim); text-transform: uppercase; letter-spacing: 0.14em; margin: 0; }
+
+.auth-field { margin-bottom: 22px; }
+.auth-field label { display: block; margin-bottom: 7px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b6b68; }
+.auth-field input {
+  width: 100%; padding: 13px 14px; background: #fafafa; border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 8px; color: #1a1a1a; font-size: 14.5px; font-family: inherit; outline: none; transition: all .2s ease;
+}
+.auth-field input:focus { background: #ffffff; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-wash); }
+.auth-field input::placeholder { color: #b0b0ac; }
+
+.auth-forgot { text-align: right; margin-top: -18px; margin-bottom: 16px; }
+/* Padded to a real touch target — this was a 15px-tall tap area on mobile. */
+.auth-forgot button { background: none; border: none; font-size: 12.5px; color: #9a9a96; cursor: pointer; font-family: var(--font-sans); padding: 8px 2px; min-height: 36px; }
+.auth-forgot button:hover { color: var(--gold-dim); }
+
+.auth-submit {
+  width: 100%; padding: 14px; min-height: 48px; background: var(--gold); color: #ffffff; border: none; font-size: 14px; font-weight: 600;
+  cursor: pointer; letter-spacing: 0.01em; border-radius: 8px;
+  transition: all .2s var(--ease); margin-top: 6px;
+}
+.auth-submit:active:not(:disabled) { transform: scale(0.995); }
+.auth-submit:hover:not(:disabled) { background: var(--gold-dim); box-shadow: var(--shadow-gold); }
+.auth-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+.auth-status { margin-top: 20px; font-size: 12.5px; text-align: center; min-height: 1.5em; font-family: var(--font-sans); }
+.auth-status.error { color: var(--danger); }
+.auth-status.success { color: var(--success); }
+
+.auth-toggle { margin-top: 28px; border-top: 1px solid rgba(0,0,0,0.08); padding-top: 18px; text-align: center; font-size: 13px; color: #9a9a96; }
+/* Padded for the same reason as .auth-forgot — was a 16px tap target. */
+.auth-toggle button { background: none; border: none; color: var(--gold-dim); cursor: pointer; font-weight: 600; margin-left: 6px; font-family: inherit; font-size: inherit; padding: 8px 4px; min-height: 36px; }
+.auth-toggle button:hover { text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .auth-page { padding: 16px; align-items: flex-start; padding-top: 32px; }
+  .auth-card { padding: 28px 22px; border-radius: 14px; }
+  .auth-brand { margin-bottom: 28px; }
+  .auth-brand h1 { font-size: 21px; }
+  .auth-field { margin-bottom: 18px; }
+  /* 16px prevents iOS Safari from auto-zooming when the field is focused. */
+  .auth-field input { font-size: 16px; padding: 13px 14px; }
+}

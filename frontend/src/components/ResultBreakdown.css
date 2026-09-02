@@ -1,0 +1,45 @@
+.rb-root { margin-bottom: 8px; }
+.rb-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.rb-progress-row { flex: 1; display: flex; align-items: center; gap: 12px; }
+.rb-progress-label { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+
+.rb-eyebrow {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 10px;
+}
+.rb-empty { font-size: 13px; color: var(--text-faint); padding: 10px 0 4px; }
+
+.rb-answered-list { display: flex; flex-direction: column; gap: 8px; }
+.rb-card {
+  background: var(--surface); border: 1px solid var(--border); border-left: 2px solid var(--success);
+  border-radius: var(--r-md); padding: 12px 14px;
+}
+.rb-card-label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.rb-card-subfield + .rb-card-subfield { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.rb-card-sublabel { font-size: 11px; color: var(--text-faint); margin-bottom: 2px; }
+.rb-card-value { font-size: 14px; color: var(--text-main); line-height: 1.5; white-space: pre-wrap; }
+.rb-card-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.rb-file-chip {
+  display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11.5px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 10px;
+  color: var(--text-main); text-decoration: none; cursor: pointer;
+}
+.rb-file-chip:hover { border-color: var(--gold-border); color: var(--gold); }
+
+.rb-tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-tag {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px 9px;
+}
+.rb-tag--critical { color: var(--danger); border-color: rgba(153,27,27,0.3); }
+
+.rb-customize-head { padding: 22px 24px 0; }
+.rb-customize-list { padding: 16px 24px; max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.rb-customize-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); }
+.rb-customize-row:hover { background: var(--surface-2); }
+.rb-customize-order { display: flex; flex-direction: column; gap: 1px; }
+.rb-customize-order button { background: transparent; border: none; color: var(--text-faint); cursor: pointer; font-size: 10px; padding: 1px 4px; }
+.rb-customize-order button:hover:not(:disabled) { color: var(--gold); }
+.rb-customize-order button:disabled { opacity: 0.3; cursor: not-allowed; }
+.rb-customize-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; flex: 1; }
+.rb-customize-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--border); }

@@ -1,0 +1,4 @@
+# Your AUSTRAC source documents and the generated index stay local
+*
+!.gitignore
+!README.md

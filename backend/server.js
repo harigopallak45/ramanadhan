@@ -5,8 +5,37 @@ const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const fs = require('fs');
+// Reused for server-side completeness checking on submit (never trust a
+// client-reported "I answered everything" — recompute it from real GHL data).
+const { getEnrichedContact: raGetEnrichedContact, updateContactFields: raUpdateContactFields, createCustomField: raCreateCustomField } = require('./modules/rag-audit/ghl');
+const { groupResponses: raGroupResponses } = require('./modules/rag-audit/fieldMapper');
+const raQuestionBank = require('./modules/rag-audit/questionBank');
+const raAssignments = require('./modules/rag-audit/assignments');
+const raEditPermissions = require('./modules/rag-audit/editPermissions');
+const raRequestReminders = require('./modules/rag-audit/requestReminders');
+const raLoginActivity = require('./modules/rag-audit/loginActivity');
+const { RRS_META_FIELDS } = require('./modules/rag-audit/sentinelFields');
 
 const app = express();
+
+// MOUNT-PATH NORMALISATION (MUST RUN BEFORE EVERY ROUTE)
+// cPanel/Passenger serves this app under a sub-path (its "Application URL",
+// e.g. /audit) and does NOT strip that prefix before handing the request to
+// Express — so a request to /audit/api/login arrives here with the prefix
+// still attached and matches none of the '/api/...' routes below.
+// Historically that was worked around by registering every route twice
+// ('/api/x' AND '/hlgp/api/x'); this strips the configured prefix once
+// instead, so the app works at ANY mount point with no per-route changes.
+// Unset (local dev, or a root-mounted deploy) = no rewriting at all.
+const APP_BASE_PATH = (process.env.APP_BASE_PATH || '').replace(/\/+$/, '');
+if (APP_BASE_PATH) {
+    app.use((req, res, next) => {
+        if (req.url === APP_BASE_PATH) req.url = '/';
+        else if (req.url.startsWith(APP_BASE_PATH + '/')) req.url = req.url.slice(APP_BASE_PATH.length);
+        next();
+    });
+}
 
 // ABSOLUTE CORS HANDLING (MUST BE FIRST)
 app.use((req, res, next) => {
@@ -34,15 +63,91 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files
-app.use('/hlgp', express.static(path.join(__dirname, '../frontend')));
-app.use('/audit', express.static(path.join(__dirname, '../frontend')));
-app.use(express.static(path.join(__dirname, '../frontend')));
+// Legacy split-deploy fallback. Before the frontend was folded into this
+// process, page routes lived on a separate host and this middleware bounced
+// them there whenever no build was present locally.
+//
+// LEGACY_FRONTEND_URL is now opt-in and unset by default, because the host
+// it used to hardcode was retired and every one of these redirects landed on
+// a 404 — turning "the frontend isn't built" into a total outage that looked
+// like a DNS problem. With it unset we fall through to the SPA catch-all's
+// honest 503, which names the actual fix.
+const LEGACY_FRONTEND_URL = normalizeOrigin(process.env.LEGACY_FRONTEND_URL);
+
+app.use((req, res, next) => {
+    if (!LEGACY_FRONTEND_URL) return next();
+
+    // Only ever fires when this deploy has no built frontend of its own.
+    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/dist/index.html'));
+    if (frontendExists) return next();
+
+    const reqPath = req.path.toLowerCase();
+    if (reqPath.includes('/api/')) return next();
+
+    const normalizedPath = reqPath.replace(/\.html$/, '').replace(/\/$/, '');
+    const queryString = req.url.split('?')[1];
+    const suffix = queryString ? `?${queryString}` : '';
+
+    for (const page of ['admin', 'entity', 'audit']) {
+        if (normalizedPath.endsWith(`/${page}`)) {
+            return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/${page}${suffix}`);
+        }
+    }
+
+    if (normalizedPath === '' || normalizedPath.endsWith('/login') || normalizedPath.endsWith('/login-page') || normalizedPath.endsWith('/auth')) {
+        return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/login-page${suffix}`);
+    }
+
+    next();
+});
+
+// Serve the built React app's static assets (frontend/dist, produced by
+// `npm run build` in frontend/). The SPA catch-all further down serves
+// index.html for any soft route (/admin, /entity/:id, etc.) that isn't a
+// real file here — React Router takes it from there.
+app.use('/hlgp', express.static(path.join(__dirname, '../frontend/dist')));
+app.use('/audit', express.static(path.join(__dirname, '../frontend/dist')));
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 const PORT = process.env.PORT || 5001;
 const GHL_API_KEY = process.env.GHL_API_KEY;
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+
+// Reduce a configured URL to a bare origin. Every caller of getFrontendUrl()
+// appends its own path (e.g. `${base}/audit/reset`), so a value carrying a
+// path silently produces doubled URLs — a FRONTEND_URL of
+// 'https://host/auditapp/login' once yielded '/auditapp/login/audit/reset',
+// which no route matched. Stripping the path here makes that unrepresentable.
+function normalizeOrigin(raw) {
+    const value = String(raw || '').trim().replace(/\/+$/, '');
+    if (!value) return '';
+    try {
+        return new URL(value).origin;
+    } catch {
+        return value; // not absolute — leave it alone rather than guess
+    }
+}
+
+// Public origin that emailed links (invite / reset) point at. This is the
+// single source of truth: nothing else is sniffed to decide it. Unset in
+// development, we fall back to this server's own origin, which is correct
+// because the backend serves the SPA too; unset in production we warn
+// loudly at boot instead of quietly emailing broken links.
+const FRONTEND_URL = normalizeOrigin(process.env.FRONTEND_URL);
+const DEV_FRONTEND_URL = `http://localhost:${process.env.PORT || 5001}`;
+
+function getFrontendUrl() {
+    if (FRONTEND_URL) return FRONTEND_URL;
+    return DEV_FRONTEND_URL;
+}
+
+if (!FRONTEND_URL && process.env.NODE_ENV === 'production') {
+    console.warn(
+        `[CONFIG] FRONTEND_URL is not set. Invite and password-reset emails will link to ${DEV_FRONTEND_URL}, ` +
+        'which nobody outside this server can open. Set FRONTEND_URL to the public origin, e.g. https://amlcompliance.com.au'
+    );
+}
 
 let PASSWORD_FIELD_ID = process.env.GHL_PASSWORD_FIELD_ID || 'audit_password'; 
 let RESET_URL_FIELD_ID = process.env.GHL_RESET_URL_FIELD_ID || 'reset_password_url';
@@ -79,6 +184,36 @@ async function resolveFieldIds() {
     }
 }
 
+// The one GHL field that records WHEN a "Request client" message was sent —
+// the start of the 3/5/7-day follow-up reminder clock. Provisioned the
+// FIRST time any admin actually sends a request, never as a side effect of
+// a read (see requestReminders.js for the full model).
+// Read-modify-write of one contact's activity blob. Every caller already
+// holds the contact's customFields, so this needs no extra GHL read.
+// Failures are logged and swallowed: not being able to record that somebody
+// signed in must never stop them signing in.
+async function recordAccountActivity(contactId, existingCustomFields, mutate) {
+    try {
+        const meta = await raLoginActivity.resolveActivityField(() =>
+            raCreateCustomField({ name: 'Audit Login Activity', dataType: 'TEXT' })
+        );
+        const raw = (existingCustomFields || []).find(f => f && f.id === meta.fieldId)?.value;
+        const next = mutate(raw);
+        await raUpdateContactFields(contactId, [
+            { id: meta.fieldId, value: raLoginActivity.serializeActivity(next) }
+        ]);
+    } catch (error) {
+        console.warn('[ACTIVITY] Could not record account activity:', error.response?.data?.message || error.message);
+    }
+}
+
+async function resolveRequestTimestampFieldId() {
+    const meta = await raRequestReminders.resolveTimestampField(() =>
+        raCreateCustomField({ name: 'Client Request Sent At', dataType: 'TEXT' })
+    );
+    return meta.fieldId;
+}
+
 resolveFieldIds();
 
 function enrichAndFilterContact(contact) {
@@ -93,8 +228,9 @@ function enrichAndFilterContact(contact) {
         PASSWORD_FIELD_ID,
         RESET_URL_FIELD_ID,
         ADMIN_MESSAGE_FIELD_ID,
-        INVITE_LINK_FIELD_ID
-    ];
+        INVITE_LINK_FIELD_ID,
+        raLoginActivity.peekActivityFieldId()
+    ].filter(Boolean);
     
     const enrichedFields = customFields
         .filter(f => f && f.id && !excludeIds.includes(f.id))
@@ -107,7 +243,7 @@ function enrichAndFilterContact(contact) {
                     processedValue = f.value.join(', ');
                 } else {
                     const keys = Object.keys(f.value);
-                    if (keys.length > 0 && f.value[keys[0]].url) {
+                    if (keys.length > 0 && f.value[keys[0]] && f.value[keys[0]].url) {
                         processedValue = {
                             url: f.value[keys[0]].url,
                             meta: f.value[keys[0]].meta || {}
@@ -128,6 +264,24 @@ function enrichAndFilterContact(contact) {
         
     newContact.customFields = enrichedFields;
     return newContact;
+}
+
+// Safely add/remove GHL tags while PRESERVING every other existing tag (and its
+// original casing). GHL's PUT /contacts replaces the entire tags array, so any
+// action that writes tags must send the full merged list — otherwise it silently
+// wipes roles and unrelated tags. Removal matching is case-insensitive.
+function modifyTags(existingTags, { add = [], remove = [] } = {}) {
+    const removeSet = new Set(remove.map(t => String(t).toLowerCase().trim()));
+    const result = (existingTags || []).filter(t => !removeSet.has(String(t).toLowerCase().trim()));
+    const present = new Set(result.map(t => String(t).toLowerCase().trim()));
+    for (const t of add) {
+        const key = String(t).toLowerCase().trim();
+        if (key && !present.has(key)) {
+            result.push(t);
+            present.add(key);
+        }
+    }
+    return result;
 }
 
 
@@ -152,7 +306,7 @@ app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
 
         const user = response.data.contact;
         const customFields = user.customFields || [];
-        const passwordField = customFields.find(f => f.id === PASSWORD_FIELD_ID || f.key === PASSWORD_FIELD_ID || f.id.includes('hlgrowthpar'));
+        const passwordField = customFields.find(f => f && (f.id === PASSWORD_FIELD_ID || f.fieldKey === PASSWORD_FIELD_ID));
         const hashedPassword = passwordField ? passwordField.value : null;
 
         if (!hashedPassword) return res.status(401).json({ success: false, message: 'No password set.', needsRegistration: true });
@@ -183,6 +337,10 @@ app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
             user: { id: user.id, name: user.firstName, email: user.email } 
         });
 
+        // Deliberately not awaited: the response is already sent, and a slow
+        // or failing CRM write shouldn't hold up a successful sign-in.
+        recordAccountActivity(user.id, customFields, (raw) => raLoginActivity.withLogin(raw));
+
     } catch (error) {
         const ghlError = error.response?.data?.message || error.response?.data || error.message;
         console.error('[LOGIN ERROR]:', ghlError);
@@ -203,7 +361,7 @@ app.post(['/api/signup', '/hlgp/api/signup'], async (req, res) => {
 
         const existingUser = search.data.contact;
         if (existingUser) {
-            const tags = [...new Set([...(existingUser.tags || []), 'audit user'])];
+            const tags = modifyTags(existingUser.tags, { add: ['audit user'] });
             await axios.put(`https://services.leadconnectorhq.com/contacts/${existingUser.id}`, {
                 tags,
                 customFields: [{ id: PASSWORD_FIELD_ID, value: hashedPassword }]
@@ -251,13 +409,13 @@ app.post(['/api/forgot-password', '/hlgp/api/forgot-password'], async (req, res)
         const token = jwt.sign({ id: contact.id, email: contact.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
         
         // Construct Reset URL
-        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const baseUrl = getFrontendUrl();
         const resetUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         // Trigger GHL: Update custom field and add tag to trigger automation
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contact.id}`, {
             customFields: [{ id: RESET_URL_FIELD_ID, value: resetUrl }],
-            tags: [...new Set([...(contact.tags || []), 'password reset requested'])]
+            tags: modifyTags(contact.tags, { add: ['password reset requested'] })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -360,31 +518,72 @@ app.post(['/api/reset-password', '/hlgp/api/reset-password'], async (req, res) =
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
+
+        // Only password-reset / invite tokens may set a password (not login/session tokens)
+        if (decoded.type !== 'reset' && decoded.type !== 'invite') {
+            return res.status(400).json({ success: false, message: 'Invalid token type.' });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Fetch current tags first so we don't wipe the user's role or other tags
+        const lookup = await axios.get(`https://services.leadconnectorhq.com/contacts/${decoded.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+        });
+        const contact = lookup.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Contact not found.' });
+
+        // Ensure base user tag, clear the one-time reset/invite triggers, keep everything else (incl. admin)
+        const newTags = modifyTags(contact.tags, {
+            add: [(process.env.GHL_USER_TAG || 'audit user').toLowerCase().trim()],
+            remove: ['password reset requested', 'audit invite triggered']
+        });
 
         // Update GHL contact password
         await axios.put(`https://services.leadconnectorhq.com/contacts/${decoded.id}`, {
             customFields: [{ id: PASSWORD_FIELD_ID, value: hashedPassword }],
-            tags: ['audit user'] // Ensure tag is present, maybe remove reset tag
+            tags: newTags
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
         res.json({ success: true, message: 'Password updated.' });
+
+        // Records that this account now has a password its owner chose, which
+        // is what distinguishes them from someone still on the invite default.
+        recordAccountActivity(decoded.id, contact.customFields, (raw) => raLoginActivity.withPasswordChange(raw));
     } catch (error) {
-        console.error('[RESET ERROR]:', error.message);
+        console.error('[RESET ERROR]:', error.response?.data || error.message);
         res.status(400).json({ success: false, message: 'Invalid or expired token.' });
     }
 });
 
-app.get(/.*\/(reset-password|reset)(\.html)?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/reset-password.html')));
+app.get(/.*\/(reset-password|reset)(\.html)?\/?$/, (req, res, next) => {
+    const token = req.query.token;
+    const frontendExists = fs.existsSync(path.join(__dirname, '../frontend/dist/index.html'));
 
-// Direct Page Routes
-app.get(['/', '/hlgp', '/v2', '/audit/login'], (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
-// Leave the base routes to fall through to the regex matching to enforce auth middlewares
-
-// Regex Fallbacks
-app.get(/.*\/(auth|login-page)(\.html)?$/, (req, res) => res.sendFile(path.join(__dirname, '../frontend/auth.html')));
+    if (!frontendExists) {
+        if (!token) {
+            return res.status(400).send('Invalid or missing token.');
+        }
+        try {
+            jwt.verify(token, JWT_SECRET);
+            // Same legacy split-deploy path as the middleware above; without
+            // a legacy host configured there is nowhere to send them, so say
+            // so rather than redirect into a 404.
+            if (!LEGACY_FRONTEND_URL) {
+                return res.status(503).send('Frontend not built. Run `npm run build` in the frontend/ directory.');
+            }
+            return res.redirect(302, `${LEGACY_FRONTEND_URL}/audit/reset?token=${encodeURIComponent(token)}`);
+        } catch (err) {
+            return res.status(400).send('This secure link has expired or is invalid.');
+        }
+    }
+    // Frontend is built and combined with this server — hand off to the SPA
+    // catch-all below; React Router's /reset-password route reads ?token=
+    // itself, matching what the reset-password email link points to.
+    next();
+});
 
 // Client Role Middleware
 const clientAuth = (req, res, next) => {
@@ -415,16 +614,18 @@ const adminUIAuth = (req, res, next) => {
     }
 };
 
-// Protected Routes
-app.get(/.*\/audit(\.html)?$/, clientAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/audit.html')));
-app.get(/.*\/admin(\.html)?$/, adminUIAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/admin.html')));
-app.get(/.*\/entity(\.html)?$/, adminUIAuth, (req, res) => res.sendFile(path.join(__dirname, '../frontend/entity.html')));
+// Page routes are now handled entirely by the React app's own router — see
+// the SPA catch-all registered at the very end of this file, after every
+// /api/* route. Auth is enforced client-side (ProtectedRoute) same as before.
 
 // Public: Get Backend Config
 app.get(['/api/config', '/hlgp/api/config'], (req, res) => {
     res.json({ 
         success: true, 
-        backendUrl: process.env.BACKEND_URL || '/hlgp' 
+        // Falls back to this app's own mount point rather than the retired
+        // '/hlgp' one, so a deploy that never sets BACKEND_URL still points
+        // callers at a path that exists.
+        backendUrl: process.env.BACKEND_URL || APP_BASE_PATH || '/'
     });
 });
 
@@ -446,16 +647,42 @@ const adminAuth = (req, res, next) => {
 // Admin: Fetch all users
 app.get(['/api/admin/users', '/hlgp/api/admin/users'], adminAuth, async (req, res) => {
     try {
-        // Fetch contacts from GHL
-        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`, {
-            headers: {
-                'Authorization': `Bearer ${GHL_API_KEY}`,
-                'Version': '2021-07-28',
-                'Accept': 'application/json'
-            }
-        });
+        const ghlHeaders = {
+            'Authorization': `Bearer ${GHL_API_KEY}`,
+            'Version': '2021-07-28',
+            'Accept': 'application/json'
+        };
 
-        const contacts = response.data.contacts || [];
+        // Fetch ALL contacts via cursor pagination (GHL caps each page at 100).
+        // Without this, any audit user beyond the first 100 contacts in the
+        // location is never fetched and therefore never listed — which is why
+        // newly invited users (especially pre-existing CRM contacts) go missing.
+        const MAX_PAGES = parseInt(process.env.ADMIN_MAX_CONTACT_PAGES || '50', 10);
+        let contacts = [];
+        let startAfter = null;
+        let startAfterId = null;
+        let capped = false;
+
+        for (let page = 0; page < MAX_PAGES; page++) {
+            let url = `https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`;
+            if (startAfter && startAfterId) {
+                url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+            }
+            const response = await axios.get(url, { headers: ghlHeaders });
+            const batch = response.data.contacts || [];
+            contacts = contacts.concat(batch);
+
+            const meta = response.data.meta || {};
+            if (batch.length < 100 || !meta.startAfterId) break;
+            startAfter = meta.startAfter;
+            startAfterId = meta.startAfterId;
+
+            if (page === MAX_PAGES - 1) capped = true;
+        }
+
+        if (capped) {
+            console.warn(`[ADMIN FETCH] Hit page cap (${MAX_PAGES} pages / ~${MAX_PAGES * 100} contacts); some users may be missing. Raise ADMIN_MAX_CONTACT_PAGES.`);
+        }
         
         // Filter for those with the User or Admin tag
         const userTag = (process.env.GHL_USER_TAG || 'audit user').toLowerCase().trim();
@@ -469,7 +696,11 @@ app.get(['/api/admin/users', '/hlgp/api/admin/users'], adminAuth, async (req, re
         const formattedUsers = auditUsers.map(u => {
             const tags = (u.tags || []).map(t => String(t).toLowerCase().trim());
             const isAdmin = tags.includes(adminTag) || tags.includes(adminTag.replace(' ', '-'));
-            let status = isAdmin ? 'Admin' : (tags.includes('audit submitted') ? 'Completed' : 'In Progress');
+            let status = isAdmin
+                ? 'Admin'
+                : (tags.includes('audit submitted')
+                    ? (tags.includes('audit submitted partial') ? 'Partial' : 'Completed')
+                    : 'In Progress');
 
             return {
                 id: u.id,
@@ -483,11 +714,83 @@ app.get(['/api/admin/users', '/hlgp/api/admin/users'], adminAuth, async (req, re
             };
         });
 
-        res.json({ success: true, users: formattedUsers, locationId: GHL_LOCATION_ID });
+        // Show newest contacts first so freshly invited users appear at the top
+        formattedUsers.sort((a, b) => new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0));
+
+        res.json({ success: true, users: formattedUsers, total: formattedUsers.length, scanned: contacts.length, locationId: GHL_LOCATION_ID });
     } catch (error) {
         console.error('[ADMIN FETCH ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch users' });
     }
+});
+
+// Admin: aggregate questionnaire progress across a set of clients.
+//
+// Deliberately a separate call from /api/admin/users rather than extra
+// fields on each row: answered counts need every contact's custom fields,
+// which GHL's bulk list endpoint does not return, so this costs one fetch
+// per client. Splitting it out lets the dashboard table paint immediately
+// and fill the headline counts in when they arrive, instead of holding the
+// whole page hostage to the slowest lookup.
+app.post(['/api/admin/progress-summary', '/hlgp/api/admin/progress-summary'], adminAuth, async (req, res) => {
+    const ids = Array.isArray(req.body?.contactIds) ? req.body.contactIds.filter(Boolean) : [];
+    if (!ids.length) return res.json({ success: true, clients: 0, answered: 0, total: 0, failed: 0 });
+
+    const MAX = parseInt(process.env.ADMIN_SUMMARY_MAX_CLIENTS || '250', 10);
+    const targets = ids.slice(0, MAX);
+    const CONCURRENCY = 5;
+    const assignmentFieldId = raAssignments.peekAssignmentFieldId();
+
+    // Same recipe /api/client/submit uses to decide partial vs complete, so
+    // the dashboard headline and the "submitted partial" tag can never
+    // disagree about what counts as answered.
+    async function measure(contactId) {
+        const { fields } = await raGetEnrichedContact(contactId);
+        const assignedIds = assignmentFieldId
+            ? raAssignments.parseAssignedIds(fields.find(f => f.id === assignmentFieldId)?.value)
+            : null;
+        const groups = raGroupResponses(fields);
+        const active = raQuestionBank.listActive(assignedIds);
+        const done = active.filter(q => {
+            const g = groups[q.id];
+            return g && (g.answers.length || g.files.length);
+        }).length;
+        return { done, size: active.length };
+    }
+
+    let answered = 0, total = 0, failed = 0, counted = 0;
+    // Per-client breakdown as well as the roll-up, so the table can show each
+    // row's own answered/total without a second pass over the same fetches.
+    const perClient = {};
+    const queue = [...targets];
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length) {
+            const contactId = queue.shift();
+            try {
+                const { done, size } = await measure(contactId);
+                perClient[contactId] = { answered: done, total: size };
+                answered += done;
+                total += size;
+                counted += 1;
+            } catch (err) {
+                // One unreadable contact shouldn't sink the whole headline —
+                // count it as skipped and carry on.
+                failed += 1;
+                console.warn(`[ADMIN SUMMARY] Skipped ${contactId}:`, err.response?.data?.message || err.message);
+            }
+        }
+    }));
+
+    res.json({
+        success: true,
+        clients: counted,
+        answered,
+        total,
+        failed,
+        perClient,
+        truncated: ids.length > targets.length
+    });
 });
 
 // Admin: Fetch single user details from GHL
@@ -501,7 +804,24 @@ app.get(['/api/admin/users/:id', '/hlgp/api/admin/users/:id'], adminAuth, async 
             }
         });
 
-        res.json({ success: true, contact: enrichAndFilterContact(response.data.contact) });
+        const rawContact = response.data.contact;
+        // Pulled from the raw contact before enrichment strips it, so the
+        // console can show sign-in history without it leaking into the
+        // questionnaire answers.
+        const activityFieldId = raLoginActivity.peekActivityFieldId();
+        const activityRaw = activityFieldId
+            ? (rawContact?.customFields || []).find(f => f && f.id === activityFieldId)?.value
+            : null;
+
+        res.json({
+            success: true,
+            contact: enrichAndFilterContact(rawContact),
+            activity: raLoginActivity.parseActivity(activityRaw),
+            // Distinguishes "we have never recorded anything for this account"
+            // from "recorded, and they genuinely have not signed in" — the two
+            // mean very different things to an auditor.
+            activityTracked: !!activityFieldId
+        });
     } catch (error) {
         console.error('[ADMIN USER DETAIL ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch user details' });
@@ -520,7 +840,7 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
         if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
 
         const token = jwt.sign({ id: contact.id, email: contact.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
-        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const baseUrl = getFrontendUrl();
         const resetUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         const customFieldsToUpdate = [
@@ -533,7 +853,7 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
             customFields: customFieldsToUpdate,
-            tags: [...new Set([...(contact.tags || []), 'password reset requested'])]
+            tags: modifyTags(contact.tags, { add: ['password reset requested'] })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -580,11 +900,6 @@ app.post(['/api/admin/reset-password/:id', '/hlgp/api/admin/reset-password/:id']
                                     Reset Password
                                 </a>
                             </div>
-                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
-                                If the button above does not work, copy and paste the following URL into your browser:
-                                <br/>
-                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${resetUrl}</span>
-                            </p>
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
                             <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
                                 Sent automatically by the AML Compliance Review Board.<br/>
@@ -627,23 +942,20 @@ app.post(['/api/admin/users/:id/role', '/hlgp/api/admin/users/:id/role'], adminA
         const userTag = (process.env.GHL_USER_TAG || 'audit user').toLowerCase().trim();
         const adminTag = (process.env.GHL_ADMIN_TAG || 'audit admin').toLowerCase().trim();
         const altAdminTag = adminTag.replace(' ', '-');
-        
-        let tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
-        
-        // Strip current role tags
-        tags = tags.filter(t => t !== userTag && t !== adminTag && t !== altAdminTag);
+
+        // Strip current role tags (case-insensitive); preserve all other tags as-is
+        let tags = modifyTags(contact.tags, { remove: [userTag, adminTag, altAdminTag] });
 
         // Apply new role tag
         if (action === 'promote_admin') {
-            tags.push(adminTag);
+            tags = modifyTags(tags, { add: [adminTag] });
         } else if (action === 'demote_admin') {
-            tags.push(userTag);
+            tags = modifyTags(tags, { add: [userTag] });
         }
-
-        const uniqueTags = [...new Set(tags)];
+        // action === 'revoke_access' removes role tags without adding a new one
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
-            tags: uniqueTags
+            tags
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -670,11 +982,21 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
         const contact = response.data.contact;
-        
+
+        // Starts (or restarts) the 3/5/7-day follow-up reminder clock — a
+        // fresh request always resets it, so previously-fired reminder
+        // stages must be cleared too (otherwise a stage due from the OLD
+        // request would look "already sent" and get silently skipped now).
+        const timestampFieldId = await resolveRequestTimestampFieldId();
+        const reminderStageTags = raRequestReminders.REMINDER_STAGES.map((s) => s.tag);
+
         // Update contact fields & tags
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
-            customFields: [{ id: ADMIN_MESSAGE_FIELD_ID, value: message }],
-            tags: [...new Set([...(contact.tags || []), 'client request triggered'])]
+            customFields: [
+                { id: ADMIN_MESSAGE_FIELD_ID, value: message },
+                { id: timestampFieldId, value: new Date().toISOString() }
+            ],
+            tags: modifyTags(contact.tags, { add: ['client request triggered'], remove: reminderStageTags })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -690,7 +1012,7 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
         let apiEmailSent = false;
         if (contact.email) {
             try {
-                const portalLink = process.env.BACKEND_URL || 'https://amlcompliance.com.au/hlgp';
+                const portalLink = getFrontendUrl();
                 await axios.post(`https://services.leadconnectorhq.com/conversations/messages`, {
                     type: 'Email',
                     contactId: contactId,
@@ -750,7 +1072,7 @@ app.post(['/api/admin/request-client/:id', '/hlgp/api/admin/request-client/:id']
 
 // Admin: Invite New User
 app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req, res) => {
-    const { firstName, lastName, email, company } = req.body;
+    const { firstName, lastName, email, company, role } = req.body; // role: 'admin' | 'client' (default)
     if (!email || !firstName) return res.status(400).json({ success: false, message: 'Name and Email are required' });
 
     try {
@@ -778,7 +1100,7 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
 
         // 3. Generate Invite/Reset Link
         const token = jwt.sign({ id: contactId, email: email, type: 'invite' }, JWT_SECRET, { expiresIn: '7d' }); // 7 days for invites
-        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : 'https://austrac.amlcompliance.com.au';
+        const baseUrl = getFrontendUrl();
         const inviteUrl = `${baseUrl}/audit/reset?token=${token}`;
 
         // 4. Fetch full contact to get existing tags to avoid overwriting
@@ -787,15 +1109,17 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
         });
         const currentTags = getRes.data.contact.tags || [];
 
-        // 5. Update contact with URL and Invite Tag
+        // 5. Update contact with URL, role tag, and Invite Tag
         const userTag = (process.env.GHL_USER_TAG || 'audit user').toLowerCase().trim();
-        
+        const adminTag = (process.env.GHL_ADMIN_TAG || 'audit admin').toLowerCase().trim();
+        const roleTag = role === 'admin' ? adminTag : userTag;
+
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
             customFields: [
                 { id: RESET_URL_FIELD_ID, value: inviteUrl },
                 { id: INVITE_LINK_FIELD_ID, value: inviteUrl }
             ],
-            tags: [...new Set([...currentTags, userTag, 'audit invite triggered'])]
+            tags: modifyTags(currentTags, { add: [roleTag, 'audit invite triggered'] })
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
@@ -854,11 +1178,6 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
                                     Set Up Your Account
                                 </a>
                             </div>
-                            <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-top: 24px; text-align: center;">
-                                If the button above does not work, copy and paste the following URL into your browser:
-                                <br/>
-                                <span style="font-family: monospace; word-break: break-all; color: #0f172a;">${inviteUrl}</span>
-                            </p>
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
                             <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
                                 Sent automatically by the AML Compliance Review Board.<br/>
@@ -876,11 +1195,13 @@ app.post(['/api/admin/invite', '/hlgp/api/admin/invite'], adminAuth, async (req,
             }
         }
 
-        res.json({ 
-            success: true, 
-            message: apiEmailSent 
-                ? 'Invite created and email delivered successfully via GHL Conversations API!' 
-                : 'Invite created. GHL contact card updated.' 
+        res.json({
+            success: true,
+            message: apiEmailSent
+                ? 'Invite created and email delivered successfully via GHL Conversations API!'
+                : 'Invite created. GHL contact card updated.',
+            contactId,
+            role: role === 'admin' ? 'admin' : 'client'
         });
     } catch (error) {
         console.error('[INVITE ERROR]:', error.response?.data || error.message);
@@ -937,24 +1258,31 @@ app.post(['/api/admin/users/:id/edit-permission', '/hlgp/api/admin/users/:id/edi
         const contact = response.data.contact;
         if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
 
-        const editTag = 'edit permission granted';
-        let tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
+        const lockTag = 'editing locked';
 
-        if (action === 'unlock') {
-            if (!tags.includes(editTag)) {
-                tags.push(editTag);
-            }
-        } else {
-            tags = tags.filter(t => t !== editTag);
-        }
-
-        const uniqueTags = [...new Set(tags)];
+        // Editing is open by default, for a client at ANY submission stage —
+        // locking is now only ever an explicit admin action, never automatic
+        // on submit. Preserve every existing tag; only toggle this one.
+        const tags = action === 'lock'
+            ? modifyTags(contact.tags, { add: [lockTag] })
+            : modifyTags(contact.tags, { remove: [lockTag] });
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${contactId}`, {
-            tags: uniqueTags
+            tags
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
+
+        // A fresh lock resets any previously-granted per-question edit
+        // permissions — re-locking is meant to mean "locked", not "locked
+        // except for whatever was granted last time". Admin grants specific
+        // questions back via the separate per-question picker afterward.
+        if (action === 'lock') {
+            const grantFieldId = raEditPermissions.peekGrantFieldId();
+            if (grantFieldId) {
+                await raUpdateContactFields(contactId, [{ id: grantFieldId, value: '' }]);
+            }
+        }
 
         // Add note to activity log
         await axios.post(`https://services.leadconnectorhq.com/contacts/${contactId}/notes`, {
@@ -983,6 +1311,153 @@ const verifyClientToken = (req, res, next) => {
     }
 };
 
+// =====================================================================
+// ACCOUNT — the signed-in user's own record, shared by both roles.
+// verifyClientToken only proves the JWT is valid, which is exactly the
+// bar here: admins and clients both manage their own account. Every
+// route below acts on req.user.id and never on an id from the request,
+// so there's no way to read or edit somebody else's account through it.
+// Distinct from /api/client/profile above, which returns the *audit*
+// record (answers, permissions) that drives the questionnaire.
+// =====================================================================
+
+// Turn a GHL API failure into an honest client-facing response. GHL says
+// exactly what went wrong — "this location does not allow duplicated
+// contacts", naming the field and the contact already using it — and
+// collapsing that into a blanket 500 leaves the user staring at a form that
+// just says "failed" with no way to act on it.
+function respondGhlError(res, error, fallbackMessage, logLabel) {
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    if (status === 404) {
+        return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    if (status === 400 || status === 409 || status === 422) {
+        const field = data?.meta?.matchingField;
+        if (field) {
+            const owner = data.meta.contactName ? ` (${data.meta.contactName})` : '';
+            return res.status(409).json({
+                success: false,
+                message: `That ${field} already belongs to another contact${owner}. Use a different ${field}, or ask an administrator to merge the duplicate.`,
+                field
+            });
+        }
+        return res.status(400).json({ success: false, message: data?.message || fallbackMessage });
+    }
+
+    console.error(`[${logLabel}]:`, data || error.message);
+    return res.status(500).json({ success: false, message: fallbackMessage });
+}
+
+// Narrow a GHL contact down to the account fields the profile page shows.
+function toAccount(contact, role) {
+    const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
+    return {
+        id: contact.id,
+        firstName: contact.firstName || '',
+        lastName: contact.lastName || '',
+        name: name || contact.contactName || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        companyName: contact.companyName || '',
+        isAdmin: role === 'admin'
+    };
+}
+
+app.get(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
+    try {
+        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        const contact = response.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
+        res.json({ success: true, account: toAccount(contact, req.user.role) });
+    } catch (error) {
+        respondGhlError(res, error, 'Failed to load your account.', 'ME ERROR');
+    }
+});
+
+// Update your own details. Only these four are writable: email is the
+// login identifier and the role lives in GHL tags, so changing either
+// stays an admin action.
+app.patch(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
+    const { firstName, lastName, companyName, phone } = req.body || {};
+
+    if (firstName != null && !String(firstName).trim()) {
+        return res.status(400).json({ success: false, message: 'First name cannot be empty.' });
+    }
+
+    // Partial update — an omitted field is left as-is in GHL rather than
+    // being blanked out, so the form can send only what actually changed.
+    const payload = {};
+    if (firstName != null) payload.firstName = String(firstName).trim();
+    if (lastName != null) payload.lastName = String(lastName).trim();
+    if (companyName != null) payload.companyName = String(companyName).trim();
+    if (phone != null) payload.phone = String(phone).trim();
+
+    if (!Object.keys(payload).length) {
+        return res.status(400).json({ success: false, message: 'Nothing to update.' });
+    }
+
+    try {
+        await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, payload, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+        });
+        // Re-read rather than echoing the request back, so the UI shows what
+        // GHL actually stored.
+        const fresh = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        res.json({ success: true, message: 'Profile updated.', account: toAccount(fresh.data.contact, req.user.role) });
+    } catch (error) {
+        respondGhlError(res, error, 'Failed to save your profile.', 'ME UPDATE ERROR');
+    }
+});
+
+// Change your own password. The current password is required — a stolen
+// session token on its own must not be enough to lock the real owner out.
+app.post(['/api/me/password', '/hlgp/api/me/password'], verifyClientToken, async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ success: false, message: 'Current and new password are both required.' });
+    }
+    if (String(newPassword).length < 8) {
+        return res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
+    }
+
+    try {
+        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        const contact = response.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+        const field = (contact.customFields || []).find(f => f && (f.id === PASSWORD_FIELD_ID || f.fieldKey === PASSWORD_FIELD_ID));
+        const currentHash = field ? field.value : null;
+        if (!currentHash) {
+            return res.status(400).json({ success: false, message: 'No password is set on this account — use "Forgot Password" instead.' });
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, currentHash);
+        if (!isMatch) return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            customFields: [{ id: PASSWORD_FIELD_ID, value: hashedPassword }]
+        }, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+        });
+
+        res.json({ success: true, message: 'Password changed.' });
+
+        recordAccountActivity(req.user.id, contact.customFields, (raw) => raLoginActivity.withPasswordChange(raw));
+    } catch (error) {
+        respondGhlError(res, error, 'Failed to change your password.', 'ME PASSWORD ERROR');
+    }
+});
+
 // Client: Fetch Profile & Submission Status
 app.get(['/api/client/profile', '/hlgp/api/client/profile'], verifyClientToken, async (req, res) => {
     try {
@@ -997,13 +1472,26 @@ app.get(['/api/client/profile', '/hlgp/api/client/profile'], verifyClientToken, 
         const contact = enrichAndFilterContact(response.data.contact);
         const tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
         const done = tags.includes('audit submitted') || tags.includes('audit-submitted');
-        const editingUnlocked = tags.includes('edit permission granted');
+        const isPartial = tags.includes('audit submitted partial');
+        // Editing is open by default at ANY submission stage — submitting
+        // (partial or complete) never locks the portal on its own. The ONLY
+        // thing that locks a client out is an explicit admin action.
+        const editingLocked = tags.includes('editing locked');
 
-        res.json({ 
-            success: true, 
-            contact, 
-            done, 
-            editingUnlocked 
+        // Which questions (if any) have full edit permission granted back
+        // despite the global lock — [] when not locked at all (irrelevant)
+        // or when locked with nothing specially granted (the default).
+        const grantFieldId = raEditPermissions.peekGrantFieldId();
+        const grantRaw = grantFieldId ? (contact.customFields || []).find(f => f.id === grantFieldId)?.value : null;
+        const grantedQuestionIds = raEditPermissions.parseGrantedIds(grantRaw);
+
+        res.json({
+            success: true,
+            contact,
+            done,
+            isPartial,
+            editingLocked,
+            grantedQuestionIds
         });
     } catch (error) {
         console.error('[CLIENT PROFILE ERROR]:', error.response?.data || error.message);
@@ -1019,30 +1507,78 @@ app.post(['/api/client/submit', '/hlgp/api/client/submit'], verifyClientToken, a
         });
         const contact = response.data.contact;
 
-        let tags = (contact.tags || []).map(t => String(t).toLowerCase().trim());
-        
-        // Add submitted tag
-        if (!tags.includes('audit submitted')) {
-            tags.push('audit submitted');
+        // Recompute completeness ourselves from real GHL data — never trust
+        // a client-reported "I'm done" flag. A client is always allowed to
+        // submit early with partial answers; we just tag it honestly so the
+        // auditor knows at a glance whether to expect gaps.
+        let completeness = null;
+        try {
+            const { fields } = await raGetEnrichedContact(req.user.id);
+            const fieldId = raAssignments.peekAssignmentFieldId();
+            const assignedIds = fieldId
+                ? raAssignments.parseAssignedIds(fields.find(f => f.id === fieldId)?.value)
+                : null;
+            const groups = raGroupResponses(fields);
+            const active = raQuestionBank.listActive(assignedIds);
+            const answered = active.filter(q => {
+                const g = groups[q.id];
+                return g && (g.answers.length || g.files.length);
+            }).length;
+            completeness = { answered, total: active.length, isPartial: active.length > 0 && answered < active.length };
+        } catch (e) {
+            console.warn('[CLIENT SUBMIT] Completeness check failed, submitting without a partial/complete tag:', e.message);
         }
-        // Remove edit lock release tag once submitted
-        tags = tags.filter(t => t !== 'edit permission granted');
 
-        const uniqueTags = [...new Set(tags)];
+        // Mark as submitted; preserve every other tag, including any admin
+        // lock state — submitting never changes whether editing is locked,
+        // that's a separate, explicit admin decision. Always strip any stale
+        // partial tag first — modifyTags removes before it adds, so
+        // re-adding it below (only if still partial) reflects THIS
+        // submission, not a previous one.
+        const tags = modifyTags(contact.tags, {
+            add: completeness?.isPartial ? ['audit submitted', 'audit submitted partial'] : ['audit submitted'],
+            remove: ['audit submitted partial']
+        });
 
         await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
-            tags: uniqueTags
+            tags
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
+        // Mirror the same state into the Sentinel rrs metadata fields so an
+        // admin browsing GHL directly (outside this app) sees it too.
+        if (completeness) {
+            try {
+                const pct = completeness.total ? Math.round((completeness.answered / completeness.total) * 100) : 0;
+                await raUpdateContactFields(req.user.id, [
+                    { id: RRS_META_FIELDS.submittedAt.ghlFieldId, value: new Date().toISOString() },
+                    { id: RRS_META_FIELDS.completionPct.ghlFieldId, value: pct },
+                    { id: RRS_META_FIELDS.status.ghlFieldId, value: completeness.isPartial ? 'In Progress' : 'Submitted' }
+                ]);
+            } catch (e) {
+                console.warn('[CLIENT SUBMIT] Failed to write RRS metadata fields:', e.response?.data?.message || e.message);
+            }
+        }
+
+        const noteBody = completeness
+            ? (completeness.isPartial
+                ? `Portal Activity Log: Client submitted a PARTIAL review statement (${completeness.answered}/${completeness.total} answered).`
+                : `Portal Activity Log: Client finalized and submitted the independent review statement (${completeness.answered}/${completeness.total} answered).`)
+            : `Portal Activity Log: Client finalized and submitted the independent review statement.`;
         await axios.post(`https://services.leadconnectorhq.com/contacts/${req.user.id}/notes`, {
-            body: `Portal Activity Log: Client finalized and submitted the independent review statement.`
+            body: noteBody
         }, {
             headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
         });
 
-        res.json({ success: true, message: 'Audit statement submitted successfully.' });
+        res.json({
+            success: true,
+            message: completeness?.isPartial
+                ? `Submitted with ${completeness.answered}/${completeness.total} answered — the rest will show as outstanding to your auditor.`
+                : 'Audit statement submitted successfully.',
+            completeness
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -1062,7 +1598,6 @@ app.post(['/api/webhook/ghl-receiver', '/hlgp/api/webhook/ghl-receiver'], async 
 });
 
 // Dynamic Module Loader
-const fs = require('fs');
 const modulesDir = path.join(__dirname, 'modules');
 if (fs.existsSync(modulesDir)) {
     const files = fs.readdirSync(modulesDir);
@@ -1101,5 +1636,149 @@ app.get(['/api/modules', '/hlgp/api/modules'], (req, res) => {
     }
     res.json({ success: true, modules: activeModules });
 });
+
+// SPA catch-all — MUST be the last route registered. Any GET that isn't an
+// API call and doesn't match a real static asset (already handled by
+// express.static above) falls through to here and gets the React app's
+// index.html; React Router resolves the actual page client-side. This is
+// what "combines" frontend and backend into one Express process/deploy.
+app.get(/.*/, (req, res, next) => {
+    if (req.path.includes('/api/')) return next();
+    const indexPath = path.join(__dirname, '../frontend/dist/index.html');
+    if (!fs.existsSync(indexPath)) {
+        return res.status(503).send('Frontend not built. Run `npm run build` in the frontend/ directory.');
+    }
+    res.sendFile(indexPath);
+});
+
+// =====================================================================
+// REQUEST-CLIENT FOLLOW-UP REMINDERS — a daily sweep that emails anyone
+// who hasn't fully responded to an admin's "Request client" message within
+// 3/5/7 days of it being sent. See modules/rag-audit/requestReminders.js
+// for the stage/timestamp model. No new client-facing route: this is a
+// background job, not something the admin UI triggers directly.
+// =====================================================================
+
+async function sendFollowUpReminderEmail(contact, stage, originalMessage) {
+    const portalLink = getFrontendUrl();
+    await axios.post(`https://services.leadconnectorhq.com/conversations/messages`, {
+        type: 'Email',
+        contactId: contact.id,
+        subject: `Reminder (Day ${stage.days}): Auditor Update Requested`,
+        emailSubject: `Reminder (Day ${stage.days}): Auditor Update Requested`,
+        html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #1e293b;">
+                <div style="margin-bottom: 24px; text-align: center;">
+                    <div style="display: inline-block; font-size: 32px; margin-bottom: 8px;">⏰</div>
+                    <h2 style="margin: 0; font-family: Georgia, serif; font-size: 24px; color: #0f172a; font-weight: 600;">Following Up: Compliance Review Update</h2>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                    Hello ${contact.firstName || 'Client'},
+                </p>
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                    It's been ${stage.days} days since your auditor requested the following, and we haven't yet received your response:
+                </p>
+                ${originalMessage ? `
+                <div style="margin: 24px 0; padding: 20px; background: #f8fafc; border-left: 4px solid #d4b256; border-radius: 4px; font-style: italic; font-size: 15px; line-height: 1.6; color: #0f172a; font-family: monospace;">
+                    ${String(originalMessage).replace(/\n/g, '<br>')}
+                </div>
+                ` : ''}
+                <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 32px;">
+                    Please log in to your external review portal using the button below to upload the necessary document evidence or answer outstanding questions.
+                </p>
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <a href="${portalLink}" target="_blank" style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); transition: background-color 0.2s;">
+                        Access Review Portal
+                    </a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 32px; margin-bottom: 16px;" />
+                <p style="font-size: 11px; line-height: 1.5; color: #64748b; text-align: center; margin: 0;">
+                    Sent automatically by the AML Compliance Review Board.<br/>
+                    Please do not reply directly to this message.
+                </p>
+            </div>
+        `
+    }, {
+        headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+    });
+}
+
+async function runReminderSweep() {
+    const timestampFieldId = raRequestReminders.peekTimestampFieldId();
+    if (!timestampFieldId) return; // no admin has ever sent a request yet — nothing to do, no GHL write triggered
+
+    const ghlHeaders = { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' };
+    let sent = 0;
+    try {
+        // Same cursor-pagination approach as GET /api/admin/users — a cheap
+        // tags-only pass to find candidates before fetching each one's full
+        // custom-field detail (needed for the actual timestamp value).
+        const MAX_PAGES = parseInt(process.env.ADMIN_MAX_CONTACT_PAGES || '50', 10);
+        let contacts = [];
+        let startAfter = null, startAfterId = null;
+        for (let page = 0; page < MAX_PAGES; page++) {
+            let url = `https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`;
+            if (startAfter && startAfterId) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+            const response = await axios.get(url, { headers: ghlHeaders });
+            const batch = response.data.contacts || [];
+            contacts = contacts.concat(batch);
+            const meta = response.data.meta || {};
+            if (batch.length < 100 || !meta.startAfterId) break;
+            startAfter = meta.startAfter; startAfterId = meta.startAfterId;
+        }
+
+        const candidates = contacts.filter(c => (c.tags || []).map(t => String(t).toLowerCase().trim()).includes('client request triggered'));
+
+        for (const candidate of candidates) {
+            try {
+                const detailRes = await axios.get(`https://services.leadconnectorhq.com/contacts/${candidate.id}`, { headers: ghlHeaders });
+                const contact = detailRes.data.contact;
+                if (!contact) continue;
+
+                const tsField = (contact.customFields || []).find(f => f.id === timestampFieldId);
+                const stage = raRequestReminders.dueReminderStage(contact.tags, tsField?.value);
+                if (!stage) continue;
+
+                const msgField = (contact.customFields || []).find(f => f.id === ADMIN_MESSAGE_FIELD_ID);
+                await sendFollowUpReminderEmail(contact, stage, msgField?.value);
+
+                await axios.put(`https://services.leadconnectorhq.com/contacts/${candidate.id}`, {
+                    tags: modifyTags(contact.tags, { add: [stage.tag] })
+                }, { headers: ghlHeaders });
+
+                await axios.post(`https://services.leadconnectorhq.com/contacts/${candidate.id}/notes`, {
+                    body: `Portal Activity Log: Automatic ${stage.days}-day follow-up reminder sent (no response yet to the outstanding request).`
+                }, { headers: ghlHeaders });
+
+                sent++;
+            } catch (err) {
+                console.error(`[REMINDER SWEEP] Failed for contact ${candidate.id}:`, err.response?.data || err.message);
+            }
+        }
+        console.log(`[REMINDER SWEEP] Checked ${candidates.length} pending request(s), sent ${sent} reminder(s).`);
+    } catch (error) {
+        console.error('[REMINDER SWEEP ERROR]:', error.response?.data || error.message);
+    }
+}
+
+// The sweep emails real clients, so running this server on a laptop against
+// the production GHL location must not trigger it — a plain `node server.js`
+// for local testing would otherwise mail everyone 60 seconds in. Treated as a
+// deployment only when NODE_ENV says production or FRONTEND_URL is configured
+// (a dev .env has neither); REMINDER_SWEEP=on|off forces it either way.
+const REMINDER_SWEEP = String(process.env.REMINDER_SWEEP || '').trim().toLowerCase();
+const reminderSweepEnabled = REMINDER_SWEEP
+    ? ['1', 'on', 'true', 'yes'].includes(REMINDER_SWEEP)
+    : (process.env.NODE_ENV === 'production' || !!FRONTEND_URL);
+
+if (reminderSweepEnabled) {
+    // First sweep shortly after boot (so a restart doesn't wait a full day to
+    // catch up), then once every 24h for the life of the process.
+    setTimeout(runReminderSweep, 60 * 1000);
+    setInterval(runReminderSweep, 24 * 60 * 60 * 1000);
+} else {
+    console.log('[REMINDERS] Follow-up sweep is OFF (no NODE_ENV=production and no FRONTEND_URL). Set REMINDER_SWEEP=on to force it on.');
+}
 
 app.listen(PORT, () => console.log(`🚀 Audit Portal Backend running on port ${PORT}`));

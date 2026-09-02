@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "//": "Invokes vite.js directly rather than `npm run dev`: the repo path contains an ampersand ('Apps & Fullstack'), which npm's Windows .cmd shim mis-parses into a broken path.",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend"],
+      "port": 5173
+    }
+  ]
+}

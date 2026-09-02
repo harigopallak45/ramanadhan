@@ -1,0 +1,48 @@
+.qb-main { max-width: 980px; margin: 0 auto; padding: 40px 32px 100px; }
+.qb-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 16px; }
+.qb-title { font-size: 28px; }
+.qb-sub { color: var(--text-dim); font-size: 14px; margin-top: 6px; max-width: 560px; line-height: 1.5; }
+
+.qb-section { margin-bottom: 30px; }
+.qb-section-heading { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 10px; padding-left: 2px; }
+.qb-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 8px; }
+.qb-row.archived { opacity: 0.5; }
+.qb-row--dragging { opacity: 0.4; }
+.qb-drag-handle { flex: none; cursor: grab; color: var(--text-faint); font-size: 16px; line-height: 1; user-select: none; touch-action: none; }
+.qb-drag-handle:active { cursor: grabbing; }
+.qb-id { font-family: var(--font-mono); font-size: 11px; color: var(--gold); flex: none; width: 34px; }
+.qb-main-col { flex: 1; min-width: 0; }
+.qb-item-title { font-size: 14.5px; font-weight: 500; }
+.qb-meta { display: flex; gap: 10px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.qb-actions { display: flex; gap: 6px; flex: none; }
+
+.qb-modal-head { padding: 22px 24px 0; }
+.qb-modal-body { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
+.qb-modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); }
+.qb-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.qb-provision-note { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-sm); background: var(--info-wash); border: 1px solid rgba(96,165,250,0.3); font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.qb-empty { text-align: center; padding: 60px 20px; color: var(--text-faint); }
+
+.qb-fields-list { display: flex; flex-direction: column; gap: 10px; }
+.qb-field-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
+.qb-field-row-main { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+
+@media (max-width: 640px) {
+  .qb-main { padding: 24px 16px 80px; }
+  .qb-head { flex-direction: column; align-items: stretch; }
+  .qb-head .btn { width: 100%; }
+  .qb-title { font-size: 23px; }
+
+  /* Row becomes a 2-line layout: handle + id + title, then actions —
+     the 4-across desktop layout squeezes the title to a few characters. */
+  .qb-row { flex-wrap: wrap; gap: 10px; }
+  .qb-main-col { flex: 1 1 100%; order: 3; }
+  .qb-actions { margin-left: auto; }
+
+  /* Label/type/remove stack instead of cramming into three columns */
+  .qb-field-row-main { grid-template-columns: 1fr; }
+  .qb-two-col { grid-template-columns: 1fr; }
+  .qb-modal-body { padding: 16px 18px 20px; }
+  .qb-modal-head { padding: 18px 18px 0; }
+  .qb-modal-foot { padding: 14px 18px; }
+}
