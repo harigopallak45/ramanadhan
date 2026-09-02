@@ -38,3 +38,9 @@ Centinl_*.pdf
 
 # Runtime
 *.err
+
+# ...except the frontend production build. The cPanel host can't run Vite
+# (CloudLinux's npm redirects installs into the app venv, so devDependencies
+# never land in frontend/), so dist/ is built locally with
+# VITE_BASE_PATH=/audit and deployed by `git pull` on the server.
+!frontend/dist/
