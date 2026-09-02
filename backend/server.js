@@ -1175,6 +1175,124 @@ const verifyClientToken = (req, res, next) => {
     }
 };
 
+// =====================================================================
+// ACCOUNT — the signed-in user's own record, shared by both roles.
+// verifyClientToken only proves the JWT is valid, which is exactly the
+// bar here: admins and clients both manage their own account. Every
+// route below acts on req.user.id and never on an id from the request,
+// so there's no way to read or edit somebody else's account through it.
+// Distinct from /api/client/profile above, which returns the *audit*
+// record (answers, permissions) that drives the questionnaire.
+// =====================================================================
+
+// Narrow a GHL contact down to the account fields the profile page shows.
+function toAccount(contact, role) {
+    const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
+    return {
+        id: contact.id,
+        firstName: contact.firstName || '',
+        lastName: contact.lastName || '',
+        name: name || contact.contactName || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        companyName: contact.companyName || '',
+        isAdmin: role === 'admin'
+    };
+}
+
+app.get(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
+    try {
+        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        const contact = response.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
+        res.json({ success: true, account: toAccount(contact, req.user.role) });
+    } catch (error) {
+        console.error('[ME ERROR]:', error.response?.data || error.message);
+        res.status(500).json({ success: false, message: 'Failed to load your account.' });
+    }
+});
+
+// Update your own details. Only these four are writable: email is the
+// login identifier and the role lives in GHL tags, so changing either
+// stays an admin action.
+app.patch(['/api/me', '/hlgp/api/me'], verifyClientToken, async (req, res) => {
+    const { firstName, lastName, companyName, phone } = req.body || {};
+
+    if (firstName != null && !String(firstName).trim()) {
+        return res.status(400).json({ success: false, message: 'First name cannot be empty.' });
+    }
+
+    // Partial update — an omitted field is left as-is in GHL rather than
+    // being blanked out, so the form can send only what actually changed.
+    const payload = {};
+    if (firstName != null) payload.firstName = String(firstName).trim();
+    if (lastName != null) payload.lastName = String(lastName).trim();
+    if (companyName != null) payload.companyName = String(companyName).trim();
+    if (phone != null) payload.phone = String(phone).trim();
+
+    if (!Object.keys(payload).length) {
+        return res.status(400).json({ success: false, message: 'Nothing to update.' });
+    }
+
+    try {
+        await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, payload, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+        });
+        // Re-read rather than echoing the request back, so the UI shows what
+        // GHL actually stored.
+        const fresh = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        res.json({ success: true, message: 'Profile updated.', account: toAccount(fresh.data.contact, req.user.role) });
+    } catch (error) {
+        console.error('[ME UPDATE ERROR]:', error.response?.data || error.message);
+        res.status(500).json({ success: false, message: 'Failed to save your profile.' });
+    }
+});
+
+// Change your own password. The current password is required — a stolen
+// session token on its own must not be enough to lock the real owner out.
+app.post(['/api/me/password', '/hlgp/api/me/password'], verifyClientToken, async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ success: false, message: 'Current and new password are both required.' });
+    }
+    if (String(newPassword).length < 8) {
+        return res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
+    }
+
+    try {
+        const response = await axios.get(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28', 'Accept': 'application/json' }
+        });
+        const contact = response.data.contact;
+        if (!contact) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+        const field = (contact.customFields || []).find(f => f && (f.id === PASSWORD_FIELD_ID || f.fieldKey === PASSWORD_FIELD_ID));
+        const currentHash = field ? field.value : null;
+        if (!currentHash) {
+            return res.status(400).json({ success: false, message: 'No password is set on this account — use "Forgot Password" instead.' });
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, currentHash);
+        if (!isMatch) return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await axios.put(`https://services.leadconnectorhq.com/contacts/${req.user.id}`, {
+            customFields: [{ id: PASSWORD_FIELD_ID, value: hashedPassword }]
+        }, {
+            headers: { 'Authorization': `Bearer ${GHL_API_KEY}`, 'Version': '2021-07-28' }
+        });
+
+        res.json({ success: true, message: 'Password changed.' });
+    } catch (error) {
+        console.error('[ME PASSWORD ERROR]:', error.response?.data || error.message);
+        res.status(500).json({ success: false, message: 'Failed to change your password.' });
+    }
+});
+
 // Client: Fetch Profile & Submission Status
 app.get(['/api/client/profile', '/hlgp/api/client/profile'], verifyClientToken, async (req, res) => {
     try {

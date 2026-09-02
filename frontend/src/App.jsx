@@ -9,6 +9,7 @@ import ClientPortal from './pages/ClientPortal';
 import AuditorConsole from './pages/AuditorConsole';
 import AdminDashboard from './pages/AdminDashboard';
 import QuestionBuilder from './pages/QuestionBuilder';
+import Profile from './pages/Profile';
 
 // Matches whatever `base` vite.config.js was built with (via VITE_BASE_PATH)
 // so client-side route changes stay under the same sub-path the app is
@@ -31,6 +32,9 @@ export default function App() {
             <Route path="/audit/reset" element={<ResetPassword />} />
             <Route path="/reset" element={<ResetPassword />} />
             <Route path="/audit" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
+            {/* Same page for both roles — the server derives the account from
+                the JWT, so no admin gate here. */}
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/entity/:contactId" element={<ProtectedRoute requireAdmin><AuditorConsole /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
             <Route path="/questions" element={<ProtectedRoute requireAdmin><QuestionBuilder /></ProtectedRoute>} />

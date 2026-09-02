@@ -171,6 +171,57 @@ a { color: inherit; }
 .nav-tab:hover { color: var(--text-main); background: var(--surface-hover); }
 .nav-tab.active { color: var(--gold-dim); background: var(--gold-wash); }
 
+/* ---- User menu (topbar + client portal header) ---- */
+.usermenu { position: relative; }
+
+.usermenu-trigger {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px 5px 5px; border-radius: var(--r-full);
+  background: transparent; border: 1px solid transparent; cursor: pointer;
+  color: var(--text-main); font-family: inherit; font-size: 13px;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.usermenu-trigger:hover { background: var(--surface-hover); border-color: var(--border); }
+.usermenu-trigger[aria-expanded="true"] { background: var(--surface-hover); border-color: var(--border-strong); }
+
+.usermenu-avatar {
+  width: 26px; height: 26px; border-radius: var(--r-full); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gold); color: #ffffff;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+}
+.usermenu-avatar--lg { width: 38px; height: 38px; font-size: 13px; }
+
+.usermenu-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.usermenu-caret { color: var(--text-faint); flex-shrink: 0; }
+
+.usermenu-panel {
+  position: absolute; top: calc(100% + 8px); min-width: 250px; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.usermenu--right .usermenu-panel { right: 0; }
+.usermenu--left .usermenu-panel { left: 0; }
+
+.usermenu-head { display: flex; align-items: center; gap: 11px; padding: 14px; }
+.usermenu-ident { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.usermenu-ident-name { font-size: 13.5px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usermenu-ident-email { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usermenu-ident-company { font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.usermenu-role { padding: 0 14px 12px; }
+.usermenu-actions { border-top: 1px solid var(--border); padding: 6px; display: flex; flex-direction: column; }
+
+.usermenu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  background: transparent; border: 0; cursor: pointer; text-align: left; text-decoration: none;
+  font-family: inherit; font-size: 13px; color: var(--text-dim);
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.usermenu-item:hover { background: var(--surface-hover); color: var(--text-main); }
+.usermenu-item--danger:hover { background: var(--danger-wash); color: var(--danger); }
+
 /* ---- Utility ---- */
 .divider { height: 1px; background: var(--border); border: none; margin: var(--sp-4) 0; }
 .skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: var(--r-sm); }

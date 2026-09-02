@@ -75,6 +75,16 @@ export const authApi = {
   resetPassword: (token, password) => apiFetch('/api/reset-password', { method: 'POST', body: { token, password }, auth: false })
 };
 
+// The signed-in user's own account — same endpoints for admins and clients,
+// since the server derives the record from the JWT rather than from an id
+// the caller supplies.
+export const meApi = {
+  get: () => apiFetch('/api/me'),
+  update: (payload) => apiFetch('/api/me', { method: 'PATCH', body: payload }),
+  changePassword: (currentPassword, newPassword) =>
+    apiFetch('/api/me/password', { method: 'POST', body: { currentPassword, newPassword } })
+};
+
 // Convenience namespace for the rag-audit module's endpoints.
 export const ragApi = {
   health: () => apiFetch('/api/rag-audit/health'),

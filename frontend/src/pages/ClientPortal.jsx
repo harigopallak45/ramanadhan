@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch, ragApi } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
+import UserMenu from '../components/layout/UserMenu';
 import ResultBreakdown from '../components/ResultBreakdown';
 import ClientChatWidget from '../components/ClientChatWidget';
 import QuestionAnswerFields from '../components/QuestionAnswerFields';
@@ -20,12 +20,11 @@ function questionHasAnswer(answerByField) {
 // (once entered) either a live evidence-intake form or a read-only summary
 // of what's already been filed, depending on the client's profile state.
 export default function ClientPortal() {
-  const { logout } = useAuth();
   const [entered, setEntered] = useState(false);
 
   return (
     <div className="cp-root theme-light">
-      {!entered ? <Landing onEnter={() => setEntered(true)} /> : <Portal onLogout={logout} />}
+      {!entered ? <Landing onEnter={() => setEntered(true)} /> : <Portal />}
     </div>
   );
 }
@@ -121,7 +120,7 @@ function Landing({ onEnter }) {
   );
 }
 
-function Portal({ onLogout }) {
+function Portal() {
   const toast = useToast();
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState('');
@@ -280,14 +279,7 @@ function Portal({ onLogout }) {
             AUSTRAC Registered · independent evaluation of the AML/CTF program
           </div>
         </div>
-        <button className="btn btn-ghost cp-logout-btn" onClick={onLogout}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-          logout
-        </button>
+        <UserMenu />
       </header>
 
       <div className="cp-portal-body">

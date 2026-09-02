@@ -1,12 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../lib/auth';
-import Badge from '../ui/Badge';
-import Button from '../ui/Button';
+import UserMenu from './UserMenu';
 
 const LOGO = 'https://assets.cdn.filesafe.space/wDk2dm52D9L325zEgO6S/media/69d63d6bebf1a608432cce2d.png';
 
 export default function Topbar({ tabs, right }) {
-  const { logout, isAdmin } = useAuth();
   return (
     <header className="topbar">
       <div className="brand">
@@ -23,8 +20,7 @@ export default function Topbar({ tabs, right }) {
       </div>
       <div className="row gap-3">
         {right}
-        <Badge tone="neutral">{isAdmin ? 'Administrator' : 'Client'}</Badge>
-        <Button variant="ghost" size="sm" onClick={logout}>Log out</Button>
+        <UserMenu />
       </div>
     </header>
   );
