@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import Topbar from '../components/layout/Topbar';
 import ResultBreakdown from '../components/ResultBreakdown';
 import AssignedQuestionsPanel from '../components/AssignedQuestionsPanel';
@@ -14,6 +14,17 @@ import { useToast } from '../lib/toast';
 import './AuditorConsole.css';
 
 const NAV_TABS = [{ to: '/admin', label: 'Clients' }, { to: '/questions', label: 'Question Builder' }];
+
+function formatActivityDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const when = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  if (days <= 0) return `${when} (today)`;
+  if (days === 1) return `${when} (yesterday)`;
+  return `${when} (${days} days ago)`;
+}
 
 const STATUS_META = {
   adequate: { label: 'Good', tone: 'success' },
@@ -54,6 +65,8 @@ export default function AuditorConsole() {
   const fileInputRef = useRef(null);
 
   const [contact, setContact] = useState(null);
+  const [activity, setActivity] = useState(null);
+  const [activityTracked, setActivityTracked] = useState(false);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(true);
@@ -96,6 +109,8 @@ export default function AuditorConsole() {
         ragApi.getEditPermissions(contactId)
       ]);
       setContact(userRes.contact);
+      setActivity(userRes.activity || null);
+      setActivityTracked(!!userRes.activityTracked);
       setQuestions(schemaRes.questions || []);
       setAnswers(respRes.answers || {});
       setGrantedQuestionIds(grantRes.grantedQuestionIds || []);
@@ -395,6 +410,13 @@ export default function AuditorConsole() {
       <div className="theme-dark" style={{ minHeight: '100vh' }}>
         <Topbar tabs={NAV_TABS} />
         <main className="ac-main">
+        <Link className="ac-back" to="/admin">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          All clients
+        </Link>
           <div className="skeleton" style={{ height: 140, marginBottom: 24 }} />
           <div className="skeleton" style={{ height: 60, marginBottom: 8 }} />
           <div className="skeleton" style={{ height: 60, marginBottom: 8 }} />
@@ -409,6 +431,13 @@ export default function AuditorConsole() {
       <div className="theme-dark" style={{ minHeight: '100vh' }}>
         <Topbar tabs={NAV_TABS} />
         <main className="ac-main">
+        <Link className="ac-back" to="/admin">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          All clients
+        </Link>
           <div className="ac-empty">Couldn't load this client. {loadError}</div>
         </main>
       </div>
@@ -422,10 +451,38 @@ export default function AuditorConsole() {
     <div className="theme-dark" style={{ minHeight: '100vh' }}>
       <Topbar tabs={NAV_TABS} />
       <main className="ac-main">
+        <Link className="ac-back" to="/admin">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          All clients
+        </Link>
         <div className="card ac-header">
           <div>
             <h1 className="display ac-name">{contact?.firstName} {contact?.lastName || ''}</h1>
             <p className="muted" style={{ marginTop: 4 }}>{contact?.email} &bull; {contact?.companyName || 'No company linked'}</p>
+            <dl className="ac-activity">
+              <div>
+                <dt>Last sign-in</dt>
+                <dd>{formatActivityDate(activity?.lastLoginAt) || (activityTracked ? 'Never signed in' : 'Not recorded yet')}</dd>
+              </div>
+              <div>
+                <dt>Sign-ins</dt>
+                <dd>{activity?.loginCount ? activity.loginCount : (activityTracked ? '0' : '—')}</dd>
+              </div>
+              <div>
+                <dt>Password</dt>
+                <dd>
+                  {activity?.passwordChangedAt
+                    ? `Set by them · ${formatActivityDate(activity.passwordChangedAt)}`
+                    : (activityTracked
+                        ? <span className="ac-activity-warn">Never changed — still on the invite password</span>
+                        : 'Not recorded yet')}
+                </dd>
+              </div>
+            </dl>
+
             <div className="row gap-2" style={{ marginTop: 10 }}>
               <Badge tone={isEntityAdmin ? 'gold' : 'neutral'}>{isEntityAdmin ? 'Administrator' : 'Audit user'}</Badge>
               {isSubmittedPartial && (

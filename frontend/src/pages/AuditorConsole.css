@@ -140,3 +140,28 @@
   .ac-draft-pre { font-size: 11px; padding: 14px; }
   .ac-full-report-head { flex-direction: column; gap: 12px; }
 }
+
+/* ---- Back to the client list ---- */
+.ac-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-dim); text-decoration: none;
+  margin-bottom: 16px; transition: color .15s var(--ease);
+}
+.ac-back:hover { color: var(--text-main); }
+
+/* ---- Account activity (sign-in history) ---- */
+.ac-activity {
+  display: flex; flex-wrap: wrap; gap: 8px 28px;
+  margin: 14px 0 0; padding: 0;
+}
+.ac-activity > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ac-activity dt {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.ac-activity dd { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+.ac-activity-warn { color: var(--pending); font-weight: 500; }
+
+@media (max-width: 600px) {
+  .ac-activity { gap: 10px 20px; }
+}

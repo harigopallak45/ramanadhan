@@ -14,6 +14,7 @@ const raQuestionBank = require('./modules/rag-audit/questionBank');
 const raAssignments = require('./modules/rag-audit/assignments');
 const raEditPermissions = require('./modules/rag-audit/editPermissions');
 const raRequestReminders = require('./modules/rag-audit/requestReminders');
+const raLoginActivity = require('./modules/rag-audit/loginActivity');
 const { RRS_META_FIELDS } = require('./modules/rag-audit/sentinelFields');
 
 const app = express();
@@ -187,6 +188,25 @@ async function resolveFieldIds() {
 // the start of the 3/5/7-day follow-up reminder clock. Provisioned the
 // FIRST time any admin actually sends a request, never as a side effect of
 // a read (see requestReminders.js for the full model).
+// Read-modify-write of one contact's activity blob. Every caller already
+// holds the contact's customFields, so this needs no extra GHL read.
+// Failures are logged and swallowed: not being able to record that somebody
+// signed in must never stop them signing in.
+async function recordAccountActivity(contactId, existingCustomFields, mutate) {
+    try {
+        const meta = await raLoginActivity.resolveActivityField(() =>
+            raCreateCustomField({ name: 'Audit Login Activity', dataType: 'TEXT' })
+        );
+        const raw = (existingCustomFields || []).find(f => f && f.id === meta.fieldId)?.value;
+        const next = mutate(raw);
+        await raUpdateContactFields(contactId, [
+            { id: meta.fieldId, value: raLoginActivity.serializeActivity(next) }
+        ]);
+    } catch (error) {
+        console.warn('[ACTIVITY] Could not record account activity:', error.response?.data?.message || error.message);
+    }
+}
+
 async function resolveRequestTimestampFieldId() {
     const meta = await raRequestReminders.resolveTimestampField(() =>
         raCreateCustomField({ name: 'Client Request Sent At', dataType: 'TEXT' })
@@ -208,8 +228,9 @@ function enrichAndFilterContact(contact) {
         PASSWORD_FIELD_ID,
         RESET_URL_FIELD_ID,
         ADMIN_MESSAGE_FIELD_ID,
-        INVITE_LINK_FIELD_ID
-    ];
+        INVITE_LINK_FIELD_ID,
+        raLoginActivity.peekActivityFieldId()
+    ].filter(Boolean);
     
     const enrichedFields = customFields
         .filter(f => f && f.id && !excludeIds.includes(f.id))
@@ -315,6 +336,10 @@ app.post(['/api/login', '/hlgp/api/login'], async (req, res) => {
             isAdmin, 
             user: { id: user.id, name: user.firstName, email: user.email } 
         });
+
+        // Deliberately not awaited: the response is already sent, and a slow
+        // or failing CRM write shouldn't hold up a successful sign-in.
+        recordAccountActivity(user.id, customFields, (raw) => raLoginActivity.withLogin(raw));
 
     } catch (error) {
         const ghlError = error.response?.data?.message || error.response?.data || error.message;
@@ -523,6 +548,10 @@ app.post(['/api/reset-password', '/hlgp/api/reset-password'], async (req, res) =
         });
 
         res.json({ success: true, message: 'Password updated.' });
+
+        // Records that this account now has a password its owner chose, which
+        // is what distinguishes them from someone still on the invite default.
+        recordAccountActivity(decoded.id, contact.customFields, (raw) => raLoginActivity.withPasswordChange(raw));
     } catch (error) {
         console.error('[RESET ERROR]:', error.response?.data || error.message);
         res.status(400).json({ success: false, message: 'Invalid or expired token.' });
@@ -775,7 +804,24 @@ app.get(['/api/admin/users/:id', '/hlgp/api/admin/users/:id'], adminAuth, async 
             }
         });
 
-        res.json({ success: true, contact: enrichAndFilterContact(response.data.contact) });
+        const rawContact = response.data.contact;
+        // Pulled from the raw contact before enrichment strips it, so the
+        // console can show sign-in history without it leaking into the
+        // questionnaire answers.
+        const activityFieldId = raLoginActivity.peekActivityFieldId();
+        const activityRaw = activityFieldId
+            ? (rawContact?.customFields || []).find(f => f && f.id === activityFieldId)?.value
+            : null;
+
+        res.json({
+            success: true,
+            contact: enrichAndFilterContact(rawContact),
+            activity: raLoginActivity.parseActivity(activityRaw),
+            // Distinguishes "we have never recorded anything for this account"
+            // from "recorded, and they genuinely have not signed in" — the two
+            // mean very different things to an auditor.
+            activityTracked: !!activityFieldId
+        });
     } catch (error) {
         console.error('[ADMIN USER DETAIL ERROR]:', error.response?.data || error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch user details' });
@@ -1405,6 +1451,8 @@ app.post(['/api/me/password', '/hlgp/api/me/password'], verifyClientToken, async
         });
 
         res.json({ success: true, message: 'Password changed.' });
+
+        recordAccountActivity(req.user.id, contact.customFields, (raw) => raLoginActivity.withPasswordChange(raw));
     } catch (error) {
         respondGhlError(res, error, 'Failed to change your password.', 'ME PASSWORD ERROR');
     }

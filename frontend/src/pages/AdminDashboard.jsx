@@ -19,7 +19,21 @@ function statusTone(status) {
   const s = (status || '').toLowerCase();
   if (s === 'completed') return 'success';
   if (s === 'admin') return 'gold';
+  if (s === 'not started') return 'neutral';
   return 'pending';
+}
+
+// The backend derives status from GHL tags alone, so a client who has never
+// opened the form and one who is halfway through both read "In Progress".
+// Once the per-client counts land we can tell those apart — but only then,
+// so an absent count leaves the tag-derived status untouched rather than
+// mislabelling someone as idle while their numbers are still loading.
+function effectiveStatus(user, perClient) {
+  const status = user.status || '';
+  if (status.toLowerCase() !== 'in progress') return status;
+  const p = perClient?.[user.id];
+  if (p && p.total > 0 && p.answered === 0) return 'Not started';
+  return status;
 }
 
 function EngineChip({ engine, className = '' }) {
@@ -150,10 +164,11 @@ export default function AdminDashboard() {
         || (u.company && u.company.toLowerCase().includes(q));
       // Every admin carries the same 'Admin' status, so the filter only
       // means anything on the client list.
-      const matchesStatus = roleView === 'admin' || status === 'all' || (u.status || '').toLowerCase() === status;
+      const matchesStatus = roleView === 'admin' || status === 'all'
+        || effectiveStatus(u, progress?.perClient).toLowerCase() === status;
       return matchesSearch && matchesStatus;
     });
-  }, [viewUsers, roleView, search, statusFilter]);
+  }, [viewUsers, roleView, search, statusFilter, progress]);
 
   // Answered/total costs one GHL fetch per client, so it runs after the table
   // has already painted rather than holding it up. Keyed on the id list so it
@@ -177,8 +192,12 @@ export default function AdminDashboard() {
     // ('pending') the backend never actually sends, so this stat was always
     // stuck at 0. Matching on the real status string fixes that.
     const active = clients.filter((u) => (u.status || '').toLowerCase() === 'in progress').length;
-    return { total: clients.length, completed, active, rest: clients.length - completed };
-  }, [clients]);
+    // Subset of `active` — everyone awaiting submission who hasn't answered
+    // a single question yet. Needs the per-client counts, so it's 0 until
+    // those arrive.
+    const notStarted = clients.filter((u) => effectiveStatus(u, progress?.perClient) === 'Not started').length;
+    return { total: clients.length, completed, active, notStarted, rest: clients.length - completed };
+  }, [clients, progress]);
 
   const allFilteredSelected = filteredUsers.length > 0 && filteredUsers.every((u) => selectedIds.includes(u.id));
 
@@ -321,6 +340,7 @@ function closeInviteModal() {
           {loading ? 'Loading clients…' : (
             <>
               <strong>{stats.total}</strong> clients · <strong>{stats.completed}</strong> completed · <strong>{stats.active}</strong> awaiting submission
+              {stats.notStarted > 0 && <> (<strong>{stats.notStarted}</strong> not started)</>}
               {progress && progress.total > 0 && (
                 <> · <strong>{progress.answered}</strong> of <strong>{progress.total}</strong> questions answered
                   {' '}(<strong>{progress.total - progress.answered}</strong> remaining)</>
@@ -367,6 +387,7 @@ function closeInviteModal() {
                   <option value="all">All Statuses</option>
                   <option value="completed">Completed</option>
                   <option value="in progress">In Progress</option>
+                  <option value="not started">Not Started</option>
                   <option value="partial">Partial</option>
                 </select>
               )}
@@ -423,7 +444,9 @@ function closeInviteModal() {
                     <td>{user.company && user.company !== 'N/A' ? user.company : '—'}</td>
                     <td>
                       <div className="ad-status-cell">
-                        <Badge tone={statusTone(user.status)}>{user.status}</Badge>
+                        <Badge tone={statusTone(effectiveStatus(user, progress?.perClient))}>
+                          {effectiveStatus(user, progress?.perClient)}
+                        </Badge>
                         {roleView === 'client' && (() => {
                           // Arrives after the table paints, so render nothing
                           // rather than a flash of "0/0" while it's in flight.
