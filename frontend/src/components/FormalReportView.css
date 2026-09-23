@@ -1,0 +1,74 @@
+/* =====================================================================
+   FORMAL REPORT PREVIEW — the External Review Report rendered as a page.
+   Serif body on a white sheet so it reads like the issued document, with
+   the same heading hierarchy the Word file uses. Printable as-is.
+   ===================================================================== */
+.fr-doc {
+  --fr-heading: #0f4761;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 14px;
+  line-height: 1.65;
+  padding: 44px 52px 56px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  max-width: 860px;
+  margin: 0 auto;
+}
+.fr-doc p { margin: 0 0 12px; text-align: justify; }
+.fr-doc h1 { font-family: var(--font-sans); font-weight: 500; font-size: 24px; color: var(--fr-heading); margin: 28px 0 6px; letter-spacing: -0.01em; }
+.fr-doc h2 { font-family: var(--font-sans); font-weight: 500; font-size: 19px; color: var(--fr-heading); margin: 30px 0 10px; }
+.fr-doc h2.fr-subtitle { margin-top: 4px; font-size: 17px; }
+.fr-doc h3 { font-family: var(--font-sans); font-weight: 500; font-size: 16px; color: var(--fr-heading); margin: 22px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fr-doc h4 { font-family: var(--font-sans); font-weight: 600; font-size: 13.5px; color: var(--fr-heading); margin: 12px 0 4px; }
+.fr-doc ul { margin: 0 0 14px; padding-left: 26px; }
+.fr-doc li { margin-bottom: 5px; text-align: justify; }
+.fr-entity { font-family: var(--font-sans); font-weight: 700; font-size: 15px; margin: 10px 0 2px; }
+.fr-entity-types { font-family: var(--font-sans); font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.fr-assessment p { font-family: var(--font-sans); margin: 0 0 6px; }
+.fr-area-status { font-size: 9.5px; vertical-align: middle; }
+.fr-placeholder { color: var(--danger); font-style: italic; }
+
+/* Cover block — a compact echo of the Word cover (grey band + title). */
+.fr-cover { display: flex; gap: 28px; margin: -44px -52px 24px; border-radius: var(--r-md) var(--r-md) 0 0; overflow: hidden; border-bottom: 1px solid var(--border); }
+.fr-cover-band { background: #d8d8d8; padding: 44px 26px 36px 34px; min-width: 200px; display: flex; flex-direction: column; justify-content: flex-end; }
+.fr-cover-year { font-family: var(--font-sans); font-size: 44px; line-height: 1; margin-bottom: 18px; }
+.fr-cover-author { font-family: var(--font-sans); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.fr-cover-brand, .fr-cover-date { font-family: var(--font-sans); font-size: 11px; margin-top: 6px; }
+.fr-cover-main { flex: 1; padding: 44px 44px 36px 0; text-align: right; display: flex; flex-direction: column; justify-content: center; }
+.fr-cover-title { font-family: var(--font-sans); font-size: 30px; line-height: 1.15; margin-bottom: 22px; }
+.fr-cover-entity { font-family: var(--font-sans); font-weight: 700; font-size: 16px; }
+.fr-cover-types { font-family: var(--font-sans); font-size: 12px; margin-top: 4px; }
+.fr-cover-asat { font-family: var(--font-sans); font-size: 11.5px; color: #444; margin-top: 16px; line-height: 1.5; }
+
+/* Business profile table — two columns, light rules, bold first column. */
+.fr-profile { width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 12.5px; margin: 6px 0 16px; }
+.fr-profile th, .fr-profile td { text-align: left; vertical-align: top; padding: 7px 8px; border-bottom: 1px solid #e3e3e0; }
+.fr-profile thead th { font-weight: 700; border-bottom: 1px solid #c8c8c4; }
+.fr-profile tbody th { font-weight: 700; width: 32%; }
+.fr-profile tr.fr-not-evidenced td { color: #6b6b68; font-style: italic; }
+
+.fr-signoff { margin-top: 30px; font-family: var(--font-sans); font-size: 13px; }
+.fr-signoff p { margin: 0 0 2px; text-align: left; }
+
+@media (max-width: 720px) {
+  .fr-doc { padding: 24px 20px 32px; font-size: 13.5px; }
+  .fr-cover { margin: -24px -20px 18px; flex-direction: column; gap: 0; }
+  .fr-cover-band { min-width: 0; padding: 22px 20px; }
+  .fr-cover-main { padding: 22px 20px; text-align: left; }
+  .fr-cover-title { font-size: 24px; }
+  .fr-profile tbody th { width: 40%; }
+}
+
+/* Printing: only the document, on plain paper. */
+@media print {
+  body.fr-printing * { visibility: hidden !important; }
+  body.fr-printing .fr-print-root, body.fr-printing .fr-print-root * { visibility: visible !important; }
+  body.fr-printing .fr-print-root { position: absolute; left: 0; top: 0; width: 100%; }
+  body.fr-printing .fr-doc { border: none; border-radius: 0; max-width: none; padding: 0 12mm; font-size: 12pt; }
+  body.fr-printing .fr-cover { margin: 0 -12mm 24px; border-radius: 0; }
+  body.fr-printing .fr-area-status { display: none !important; }
+  body.fr-printing .fr-area { break-inside: avoid; }
+  body.fr-printing h2, body.fr-printing h3, body.fr-printing h4 { break-after: avoid; }
+}

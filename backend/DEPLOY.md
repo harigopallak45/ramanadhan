@@ -48,3 +48,14 @@ The index has **no machine-specific paths** — copying it to any OS works as-is
   fetcher automatically falls back to the Internet Archive
   (`RAG_USE_WAYBACK=1` forces it).
 - Keep `.env` out of any image/repo; inject it as a secret at runtime.
+- **AI runs are background jobs inside the Node process.** One click on
+  *AI Score* scores, writes the External Review Report, renders Word and
+  files it on the GHL contact — 2–10 minutes on a rate-limited model key.
+  The process must stay alive for that long even when nobody is polling:
+  on cPanel/Passenger keep the app from being idled out (Passenger's
+  `passenger_min_instances 1` / `passenger_pool_idle_time 0`, or the
+  "Keep alive" option the panel exposes). A run that is killed mid-way is
+  reported on the console as interrupted, and *AI Score* simply runs it
+  again. Finished runs are saved under `backend/reports/<contactId>/`
+  (gitignored) and, as Word files, on the contact's *AI Score Reports*
+  field in GHL — so nothing issued is lost with the process.

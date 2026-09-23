@@ -89,10 +89,45 @@ export const meApi = {
 export const ragApi = {
   health: () => apiFetch('/api/rag-audit/health'),
   score: (contactId, opts = {}) => apiFetch(`/api/rag-audit/score/${contactId}${opts.save ? '?save=1' : ''}`, { method: 'POST' }),
-  fullReport: (contactId, result) => apiFetch(`/api/rag-audit/score/${contactId}/full-report`, {
+
+  // THE AI RUN — one click: score + Independent External Review Report +
+  // Word file + save to the client's GHL contact, as a background job the
+  // console polls. `runs` returns everything needed on page load (running
+  // job, last outcome, every version, latest report + score).
+  reportDefaults: () => apiFetch('/api/rag-audit/report-defaults'),
+  startRun: (contactId, options = {}) => apiFetch(`/api/rag-audit/score/${contactId}/run`, { method: 'POST', body: { options } }),
+  // Report-only job around an already-scored result (a new version without re-scoring).
+  startReportRun: (contactId, result, options = {}) => apiFetch(`/api/rag-audit/score/${contactId}/full-report`, {
     method: 'POST',
-    body: { areas: result.areas, entityLabel: result.entity, score: result.score, rating: result.rating, criticalFailures: result.criticalFailures, scoredAt: result.scoredAt }
+    body: { areas: result.areas, entityLabel: result.entity, score: result.score, rating: result.rating, criticalFailures: result.criticalFailures, scoredAt: result.scoredAt, options }
   }),
+  runStatus: (contactId, jobId) => apiFetch(`/api/rag-audit/score/${contactId}/run/status/${jobId}`),
+  runs: (contactId) => apiFetch(`/api/rag-audit/score/${contactId}/runs`),
+  getFullReport: (contactId, reportId) => apiFetch(`/api/rag-audit/score/${contactId}/full-report/${reportId}`),
+  ghlReportFiles: (contactId) => apiFetch(`/api/rag-audit/score/${contactId}/ghl-report-files`),
+  // Binary download — the bearer token has to travel in a header, so this
+  // can't be a plain <a href>; fetch the file and hand it to the browser.
+  downloadFullReportDocx: async (contactId, reportId, fallbackName) => {
+    const res = await fetch(`${apiBase()}/api/rag-audit/score/${contactId}/full-report/${reportId}/docx`, {
+      headers: { Authorization: `Bearer ${getToken()}` }
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError(data.message || `Download failed (${res.status})`, res.status, data);
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = match ? match[1] : (fallbackName || 'External_Review_Report.docx');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return link.download;
+  },
   analyzeUpload: (formData) => apiFetch('/api/rag-audit/analyze-upload', { method: 'POST', body: formData, isForm: true }),
   note: (contactId, body) => apiFetch(`/api/rag-audit/note/${contactId}`, { method: 'POST', body: { body } }),
 

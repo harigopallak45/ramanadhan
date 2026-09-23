@@ -20,3 +20,7 @@ edit-permissions-field.json
 # Cached GHL field id/key for the "client request sent at" timestamp field —
 # provisioned once at runtime on first use, not code.
 request-timestamp-field.json
+
+# Cached GHL field ids for the "AI Score" / "AI Score Reports" contact
+# fields — provisioned once at runtime on the first completed run, not code.
+report-fields.json

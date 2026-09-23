@@ -1,7 +1,7 @@
-export function Field({ label, hint, children }) {
+export function Field({ label, hint, htmlFor, children }) {
   return (
     <div className="field">
-      {label && <label className="label">{label}</label>}
+      {label && <label className="label" htmlFor={htmlFor}>{label}</label>}
       {children}
       {hint && <span className="hint">{hint}</span>}
     </div>

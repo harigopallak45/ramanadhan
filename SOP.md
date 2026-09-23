@@ -64,7 +64,7 @@
 | :--- | :--- | :--- |
 | **Centinl Admin Console** | Admin Token / `audit admin` GHL Tag | Onboard clients, trigger nudges, lock/unlock edit permissions. |
 | **GoHighLevel CRM** | `GHL_LOCATION_ID` API Access | Manage contacts, audit questionnaire fields, and role tags. |
-| **Groq AI Console** | `GROQ_API_KEY` (4,000 token output reservation) | Execute AI scoring and RAG document compliance analysis. |
+| **AI engines** | `GROQ_API_KEY` (primary), `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (backups) | Execute AI scoring and report writing; the backups take over when Groq is down or rate-limited. |
 | **Password Manager** | 1Password Shared Vault (`Centinl Ops`) | Access credentials for backend hosting, GHL, and email proxies. |
 | **Slack Workspace** | Channels: `#centinl-ops`, `#centinl-urgent` | Communication, alert monitoring, and escalation handling. |
 
@@ -179,20 +179,29 @@ Client audit status updates to `Submitted`, or an auditor uploads policy documen
    * Inspect the client's custom field answers in the left column.
    * Confirm that uploaded policy files (PDF/DOCX/TXT) are attached under **Uploaded Documents**.
 
-3. **Execute Scoring:**  
-   Click **Run AI Compliance Analyzer**. The backend pipeline executes automatically:
-   * **Intake & Document Parsing:** Extracts text from uploaded files (up to 12,000 character budget).
+3. **Execute the AI Score run:**  
+   Check the **Report engagement details** (reviewer, firm, Statement of Engagement date, review *as at* date, concluded date — printed on the report), then click **AI Score** (the same button on a client's row in `/admin` starts the run and opens their console). One click runs the whole pipeline as a background job with a progress bar (2–10 minutes on the current model tier):
+   * **Intake & Document Parsing:** Extracts text from uploaded files.
    * **RAG Grounding:** Searches the local BM25 index for relevant statutory AUSTRAC rules.
-   * **Groq LLM Scoring:** Evaluates adequacy (0–10) and efficacy (0–10) across Q01–Q23.
+   * **LLM Scoring:** Evaluates adequacy and efficacy across the 23 review areas; the scorecard appears as soon as this stage completes.
    * **Deduction Engine:** Applies critical failure penalties and calculates the final 0–100 score.
+   * **External Review Report:** Writes the full report (business profile, areas A–Q, narrative), renders the Word file in the issued format and files it on the client's GHL contact as the next version (*AI Score Reports* field + *AI Score* summary + activity note).
+   You do not need to wait: leave the page and come back — the run continues on the server and the finished version is shown on the next visit. Only one run per client can be in flight at a time.
 
 4. **Review Results:**  
-   * **Final Score & Rating:** Check overall score (e.g., `85/100 - Pass`, `42/100 - Critical Non-Compliant`).
+   * **Final Score & Rating:** Check the overall score and the report wording it maps to — e.g. `79/100 — Effective with Moderate Enhancement Opportunities`, `42/100 — Not Effective — Significant Remediation Required`. This is the **Indicative Overall Compliance Rating** and **Overall Assessment** printed in the issued report.
    * **Area Statuses (Q01–Q23):** Verify that all 23 areas returned valid status badges (`adequate`, `partial`, `inadequate`, `missing`). Ensure the `incompleteModelOutput` list is empty.
    * **Grounding Citation:** Ensure `grounded: true` is displayed.
 
-5. **Export Draft Findings:**  
-   Copy the generated **Executive Summary** and **Draft Report** into the official auditor evaluation template.
+5. **Review the Independent External Review Report:**  
+   In the **Independent External Review Report** panel (below the scorecard):
+   * Review the on-screen document: Executive Summary with the assessment lines, the 23-row Business Profile table (rows marked *Not evidenced…* need the client's documents or manual completion), Scope and Methodology, the Detailed Compliance Review (each area A–Q: *Requirement* + *Auditor Observation*), Opportunities for Improvement, Key Strengths, Key Red Flags and Overall Conclusion.
+   * Read the **Draft notes** box (if shown) — it lists anything the model could not evidence or generate.
+   * **Versions:** every run is a numbered version (`…_v1.docx`, `…_v2.docx`, …). Open **Versions** to see each one with its score and date, whether it is **Filed ✓** on the GHL contact (the link opens GHL's copy), view an earlier one, or download its Word file. The same files are visible in GHL on the contact's *AI Score Reports* field, and the latest result in the *AI Score* field.
+   * Click **Download Word (.docx)** for the issue-ready file (cover page, headings, profile table, signature block, page numbers — the issued format), or **Print / PDF**. **New version (same score)** writes another report version around the current score without re-scoring (e.g. after changing the engagement dates).
+
+6. **Auditor Sign-off:**  
+   Every section is a draft written from the entity's evidence and the AI verdicts. The Lead AML Auditor edits and approves the Word document before it is issued; remove the *Draft notes* box from the final.
 
 > [!WARNING]
 > If scanned image-only PDFs are uploaded, text extraction will fail because OCR is disabled. Request the client to upload native text-based PDFs.
@@ -201,7 +210,8 @@ Client audit status updates to `Submitted`, or an auditor uploads policy documen
 - [ ] Score calculated (0–100) with rating and tone color.
 - [ ] All 23 review areas (Q01–Q23) scored; no missing areas in `incompleteModelOutput`.
 - [ ] Grounding active (`grounded: true`).
-- [ ] Draft report copied to auditor evaluation record.
+- [ ] External Review Report generated, Business Profile rows checked (no *Not evidenced* rows left that the client can supply), Draft notes cleared.
+- [ ] Word report downloaded and signed off by the Lead AML Auditor before issue.
 
 ---
 
@@ -254,7 +264,7 @@ Monthly recurring task OR whenever AUSTRAC releases new AML/CTF guidance documen
 
 | Issue / Trigger | Severity | Immediate Action | Primary Escalation Contact |
 | :--- | :--- | :--- | :--- |
-| **Groq API Rate Limit (429)** | **High** | Wait 60 seconds and re-run scoring. If persistent, check Groq token quota. | Technical Lead (`#centinl-urgent`) |
+| **Groq API Rate Limit (429) / outage** | **High** | The run fails over to the backup engine (Claude, then OpenAI — `LLM_FALLBACK_PROVIDERS`) by itself; the report records which engine answered. If it still fails, no backup key is set: check `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in `backend/.env` and re-run. | Technical Lead (`#centinl-urgent`) |
 | **GHL API Unauthorized (401)** | **Critical** | Verify `GHL_API_KEY` in `backend/.env`. Restart server (`npm start`). | Technical Lead |
 | **Score < 50/100 (Critical Non-Compliance)** | **High** | Do NOT send automated findings. Initiate mandatory manual auditor review. | Lead AML Auditor |
 | **Expired Reset / Invite Token** | **Low** | Navigate to `/admin` roster and click **Reset Password / Re-invite**. | Primary VA / Support |
@@ -296,7 +306,7 @@ Below is the complete 3-column client handoff reference table for quick copy-pas
 | | Access Required | 2. GoHighLevel Sub-Account Access (`GHL_LOCATION_ID`) |
 | | Access Required | 3. 1Password Shared Vault - Centinl Admin Credentials |
 | | Access Required | 4. Slack Workspace Access (`#centinl-ops` / `#centinl-urgent`) |
-| | Step-by-Step Instructions | 1. Log into `/admin` console.<br>2. Click 'Invite User', enter Name, Email, Company to create/tag GHL contact and send 1-hr registration link.<br>3. Monitor roster status until 'Submitted' (run 'Bulk Nudge' for overdue clients).<br>4. Open `/entity?id=<contactId>`, review uploaded files and GHL custom fields.<br>5. Click 'Run AI Compliance Analyzer' to evaluate 23 AUSTRAC review areas (Q01-Q23).<br>6. Review final score (0-100), critical deductions, and tone indicator.<br>7. Copy Draft Report for official auditor sign-off.<br>8. Click 'Lock Editing' to freeze client audit responses. |
+| | Step-by-Step Instructions | 1. Log into `/admin` console.<br>2. Click 'Invite User', enter Name, Email, Company to create/tag GHL contact and send 1-hr registration link.<br>3. Monitor roster status until 'Submitted' (run 'Bulk Nudge' for overdue clients).<br>4. Open `/entity?id=<contactId>`, review uploaded files and GHL custom fields.<br>5. Click 'AI Score' to evaluate the 23 AUSTRAC review areas (Q01-Q23).<br>6. Review the score (0-100), Overall Assessment, critical deductions and area findings.<br>7. In the 'Independent External Review Report' panel confirm the engagement details, click 'Generate report', review the document and download the Word file for auditor sign-off.<br>8. Click 'Lock Editing' to freeze client audit responses. |
 | | Quality Checklist | 1. Client tagged correctly as `audit user` in GHL. |
 | | Quality Checklist | 2. All 23 review areas (Q01-Q23) successfully evaluated (`incompleteModelOutput` array is empty). |
 | | Quality Checklist | 3. AUSTRAC Grounding verified (`grounded: true`). |

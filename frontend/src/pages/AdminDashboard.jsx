@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Topbar from '../components/layout/Topbar';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
@@ -13,7 +13,6 @@ import './AdminDashboard.css';
 const NAV_TABS = [{ to: '/admin', label: 'Clients' }, { to: '/questions', label: 'Question Builder' }];
 const EMPTY_INVITE = { firstName: '', lastName: '', email: '', company: '', role: 'client' };
 const EMPTY_NEW_QUESTION = { section: '', title: '', adequacy: '', efficacy: '', inputType: 'file', critical: false };
-const EMPTY_SCORECARD = { open: false, contactId: null, name: '', result: null, loading: false, error: '', reportOpen: false };
 
 function statusTone(status) {
   const s = (status || '').toLowerCase();
@@ -36,21 +35,29 @@ function effectiveStatus(user, perClient) {
   return status;
 }
 
+// Primary engine + backups. "AI ready" while the primary serves; "on
+// backup" when it is resting after a failure and a backup has taken over.
+// The tooltip lists the whole chain with each engine's state.
 function EngineChip({ engine, className = '' }) {
   if (!engine) return <span className={`ad-engine-chip ${className}`}>engine…</span>;
-  if (engine.configured) {
-    return (
-      <span className={`ad-engine-chip ${className}`} title={`${engine.provider || ''} · ${engine.model || ''}`}>
-        ✓ AI ready
-      </span>
-    );
-  }
-  return <span className={`ad-engine-chip off ${className}`}>AI not set up</span>;
+  if (!engine.configured) return <span className={`ad-engine-chip off ${className}`}>AI not set up</span>;
+  const chain = Array.isArray(engine.engine?.chain) ? engine.engine.chain : [];
+  const backups = chain.filter((c) => c.role === 'backup' && c.configured);
+  const onBackup = engine.engine?.active && engine.engine.active !== engine.engine.primary;
+  const title = chain.length
+    ? chain.map((c) => `${c.role}: ${c.provider} · ${c.model} — ${c.status}`).join('\n')
+    : `${engine.provider || ''} · ${engine.model || ''}`;
+  return (
+    <span className={`ad-engine-chip ${onBackup ? 'backup' : ''} ${className}`} title={title}>
+      {onBackup ? `⚠ AI on backup (${engine.provider})` : backups.length ? `✓ AI ready · ${backups.length} backup${backups.length > 1 ? 's' : ''}` : '✓ AI ready · no backup'}
+    </span>
+  );
 }
 
 export default function AdminDashboard() {
   const { logout } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +87,7 @@ export default function AdminDashboard() {
   const [newQForm, setNewQForm] = useState(EMPTY_NEW_QUESTION);
   const [savingNewQ, setSavingNewQ] = useState(false);
 
-  const [scorecard, setScorecard] = useState(EMPTY_SCORECARD);
+  const [startingRunId, setStartingRunId] = useState(null); // client whose AI run is being kicked off
 
   useEffect(() => { fetchUsers(); loadEngineChip(); }, []);
 
@@ -272,63 +279,22 @@ function closeInviteModal() {
     }
   }
 
-  function openScorecard(user) {
-    const name = (user.company && user.company !== 'N/A') ? user.company : (user.name || user.email);
-    setScorecard({ ...EMPTY_SCORECARD, open: true, contactId: user.id, name, loading: true });
-    runScore(user.id);
-  }
-  function closeScorecard() { setScorecard((s) => ({ ...s, open: false })); }
-
-  async function runScore(contactId) {
-    const id = contactId || scorecard.contactId;
-    if (!id) return;
-    setScorecard((s) => ({ ...s, loading: true, error: '', result: null }));
+  // One click on a row's AI Score starts the full run (score → External
+  // Review Report → Word → filed on the GHL contact) and opens that client's
+  // console, where the progress bar and the result live. The run continues
+  // on the server whether or not anyone stays on the page.
+  async function startAiRun(user) {
+    if (startingRunId) return;
+    setStartingRunId(user.id);
     try {
-      const d = await ragApi.score(id, { save: true });
-      setScorecard((s) => ({ ...s, loading: false, result: d.result }));
+      const d = await ragApi.startRun(user.id);
+      toast(d.reused ? 'An AI run is already in progress for this client — opening it.' : 'AI run started — score, report and Word file will be filed on the contact.');
+      navigate(`/entity/${user.id}`);
     } catch (err) {
-      setScorecard((s) => ({ ...s, loading: false, error: err.message }));
+      toast(err.message, 'error');
+    } finally {
+      setStartingRunId(null);
     }
-  }
-
-  async function requestEvidence() {
-    const areas = scorecard.result?.areas || [];
-    const gaps = areas.filter((a) => a.status === 'missing' || a.status === 'inadequate');
-    if (!gaps.length) return toast('No outstanding evidence gaps to request.', 'error');
-    const lines = gaps.map((g) => `• ${g.qId} ${g.title}`).join('\n');
-    if (!window.confirm(`Log an evidence request for ${gaps.length} item(s) to this contact's GHL activity feed?`)) return;
-    try {
-      await ragApi.note(scorecard.contactId, `Centinl — evidence requested from client (${gaps.length} items):\n${lines}`);
-      toast('Evidence request logged to GHL.');
-    } catch (err) { toast(err.message, 'error'); }
-  }
-
-  function exportScorecardPdf() {
-    const r = scorecard.result;
-    if (!r) return;
-    const rows = (r.areas || []).map((a) =>
-      `<tr><td>${a.qId}</td><td>${a.title}</td><td style="text-align:center;">${a.adequacy}/${a.efficacy}</td><td>${a.status}</td><td>${(a.finding || '').replace(/</g, '&lt;')}</td></tr>`
-    ).join('');
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<html><head><title>Centinl Report — ${scorecard.name}</title><style>
-      body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:32px;max-width:900px;margin:auto;}
-      h1{font-size:20px;margin:0;} .sub{color:#666;font-size:13px;margin:4px 0 18px;}
-      .band{display:inline-block;padding:4px 12px;border-radius:6px;background:#f0f0f0;font-size:13px;}
-      table{width:100%;border-collapse:collapse;font-size:11px;margin-top:14px;}
-      td,th{border:1px solid #ddd;padding:6px;text-align:left;vertical-align:top;} th{background:#f5f5f5;}
-      .muted{color:#777;font-size:11px;margin-top:18px;}</style></head><body>
-      <h1>Centinl — Independent AML/CTF Program Evaluation</h1>
-      <div class="sub"><b>${scorecard.name}</b> · ${new Date(r.scoredAt || Date.now()).toLocaleString()}</div>
-      <div class="sub">${(r.framework || 'AUSTRAC AML/CTF Reform — independent evaluation').replace(/</g, '&lt;')}</div>
-      <h2>Score: ${r.score}/100 &nbsp;<span class="band">${r.rating}</span></h2>
-      <div class="muted">raw ${r.rawScore} · −${r.deduction} critical deductions · ${r.criticalFailures} critical gaps · engine ${r.model}</div>
-      <p>${(r.executiveSummary || '').replace(/</g, '&lt;')}</p>
-      <table><thead><tr><th>Area</th><th>Title</th><th>Adq/Eff</th><th>Status</th><th>Finding</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="muted">Generated by Centinl AI evaluator. Auditor review required before issue.</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => w.print(), 500);
   }
 
   return (
@@ -463,7 +429,9 @@ function closeInviteModal() {
                       </div>
                     </td>
                     <td className="ad-row-actions">
-                      <button className="ad-btn-score" onClick={() => openScorecard(user)}>✦ AI Score</button>
+                      <button className="ad-btn-score" disabled={startingRunId === user.id} onClick={() => startAiRun(user)} title="Score, write the External Review Report, render Word and file it on the GHL contact">
+                        {startingRunId === user.id ? '✦ Starting…' : '✦ AI Score'}
+                      </button>
                       <Link className="btn btn-secondary btn-sm" to={`/entity/${user.id}`}>View</Link>
                     </td>
                   </tr>
@@ -613,151 +581,6 @@ function closeInviteModal() {
         </div>
       </Modal>
 
-      <Modal open={scorecard.open} onClose={closeScorecard} maxWidth={720}>
-        <ScorecardBody
-          scorecard={scorecard}
-          engine={engine}
-          onClose={closeScorecard}
-          onRescore={() => runScore()}
-          onRequestEvidence={requestEvidence}
-          onExportPdf={exportScorecardPdf}
-          onToggleReport={() => setScorecard((s) => ({ ...s, reportOpen: !s.reportOpen }))}
-        />
-      </Modal>
-    </div>
-  );
-}
-
-function toneColor(score) {
-  return score >= 85 ? 'var(--success)' : score >= 70 ? 'var(--gold)' : score >= 50 ? 'var(--pending)' : 'var(--danger)';
-}
-function bandBg(score) {
-  return score >= 85 ? 'var(--success-wash)' : score >= 70 ? 'var(--gold-wash)' : score >= 50 ? 'var(--pending-wash)' : 'var(--danger-wash)';
-}
-function markColor(v) { return v >= 60 ? 'var(--success)' : v >= 30 ? 'var(--pending)' : 'var(--danger)'; }
-function statusTone2(s) { return s === 'adequate' ? 'success' : s === 'partial' ? 'pending' : (s === 'inadequate' || s === 'error') ? 'danger' : 'neutral'; }
-function plainStatus(s) { return ({ adequate: 'Good', partial: 'Partial', inadequate: 'Weak', missing: 'Not provided', error: 'Not scored' })[s] || s; }
-function bandText(score) {
-  return score >= 85 ? 'Strong — this file looks compliant.'
-    : score >= 70 ? 'Mostly there — a few gaps to fix.'
-    : score >= 50 ? 'Not ready — several things need fixing.'
-    : 'Not ready — major evidence is missing.';
-}
-
-function Pipeline({ state }) {
-  return (
-    <div className="ad-sc-pipe">
-      <span className="ad-sc-step done">✓ received</span><span>→</span>
-      <span className={`ad-sc-step ${state === 'processing' ? 'active' : 'done'}`}>{state === 'done' ? '✓ ' : ''}reading documents</span><span>→</span>
-      <span className={`ad-sc-step ${state === 'done' ? 'active' : ''}`}>{state === 'done' ? '✓ ' : ''}done</span>
-    </div>
-  );
-}
-
-function ScorecardBody({ scorecard, engine, onClose, onRescore, onRequestEvidence, onExportPdf, onToggleReport }) {
-  const { name, result, loading, error, reportOpen } = scorecard;
-
-  return (
-    <div className="ad-sc-panel">
-      <div className="ad-sc-head">
-        <div>
-          <div className="display ad-sc-entity">{name || 'Entity'}</div>
-          <div className="muted" style={{ fontSize: 12 }}>Independent AML/CTF review · grounded scoring</div>
-        </div>
-        <div className="row gap-2">
-          <EngineChip engine={engine} />
-          <button className="ad-sc-close" onClick={onClose}>✕</button>
-        </div>
-      </div>
-
-      {loading && (
-        <>
-          <Pipeline state="processing" />
-          <div className="ad-sc-loading">
-            Checking the client's documents against AUSTRAC rules…<br />
-            <span style={{ fontSize: 12 }}>This usually takes a few seconds.</span>
-          </div>
-        </>
-      )}
-
-      {!loading && error && (
-        <>
-          <Pipeline state="processing" />
-          <div className="ad-sc-error">{error}</div>
-        </>
-      )}
-
-      {!loading && !error && result && (
-        <>
-          <Pipeline state="done" />
-
-          <div className="ad-sc-score-row">
-            <div className="ad-sc-score-big">
-              <div className="muted" style={{ fontSize: 12 }}>Overall score</div>
-              <div className="ad-sc-score-line">
-                <span className="ad-sc-score-num" style={{ color: toneColor(result.score) }}>{result.score}</span>
-                <span className="muted" style={{ fontSize: 13 }}>/ 100</span>
-                <span className="ad-sc-rating" style={{ background: bandBg(result.score), color: toneColor(result.score) }}>{result.rating}</span>
-              </div>
-              <div className="ad-sc-bar"><span style={{ width: `${result.score}%`, background: toneColor(result.score) }} /></div>
-              <div style={{ fontSize: 13, color: toneColor(result.score), marginTop: 10 }}>{bandText(result.score)}</div>
-            </div>
-            <div className="ad-sc-stats">
-              <StatMini label="Serious gaps" value={result.criticalFailures} color="var(--danger)" />
-              <StatMini label="Sections with evidence" value={`${(result.areas || []).filter((a) => a.status !== 'missing').length} / ${(result.areas || []).length}`} />
-              <StatMini label="Documents read" value={result.documents?.read ?? 0} />
-              <StatMini label="Couldn't read" value={result.documents?.unreadable ?? 0} color="var(--pending)" />
-            </div>
-          </div>
-
-          <div style={{ fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>Section-by-section results</div>
-          <div className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>Each row has two bars — left: is it documented · right: does it actually work.</div>
-          <div className="ad-sc-areas">
-            {(result.areas || []).map((a) => (
-              <div className="ad-sc-area-row" key={a.qId}>
-                <span className="ad-sc-qid">{a.qId}</span>
-                <span>{a.title}</span>
-                <span className="ad-sc-dual">
-                  <span><i style={{ width: `${a.adequacy || 0}%`, background: markColor(a.adequacy || 0) }} /></span>
-                  <span><i style={{ width: `${a.efficacy || 0}%`, background: markColor(a.efficacy || 0) }} /></span>
-                </span>
-                <Badge tone={statusTone2(a.status)}>{plainStatus(a.status)}</Badge>
-              </div>
-            ))}
-          </div>
-
-          <div className="ad-sc-gaps">
-            <div className="ad-sc-gaps-head">
-              <div style={{ fontSize: 13, fontWeight: 500 }}>Missing items · {(result.areas || []).filter((a) => a.status === 'missing' || a.status === 'inadequate').length}</div>
-              <button className="ad-sc-btn" onClick={onRequestEvidence}>Ask client for these</button>
-            </div>
-            <div className="ad-sc-gap-chips">
-              {(result.areas || []).filter((a) => a.status === 'missing' || a.status === 'inadequate').length
-                ? (result.areas || []).filter((a) => a.status === 'missing' || a.status === 'inadequate').map((g) => (
-                  <Badge key={g.qId} tone={statusTone2(g.status)}>{g.qId} {g.title.split(' ').slice(0, 2).join(' ')}</Badge>
-                ))
-                : <span className="faint" style={{ fontSize: 12 }}>No outstanding gaps.</span>}
-            </div>
-          </div>
-
-          {reportOpen && <div className="ad-sc-report">{result.draftReport || '(no report)'}</div>}
-
-          <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-            <button className="ad-sc-btn" onClick={onToggleReport}>{reportOpen ? 'Hide full write-up' : 'See full write-up'}</button>
-            <button className="ad-sc-btn" onClick={onExportPdf}>Download report</button>
-            <button className="ad-sc-btn primary" onClick={onRescore}>Run again</button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function StatMini({ label, value, color }) {
-  return (
-    <div className="ad-sc-statmini">
-      <div className="muted" style={{ fontSize: 11 }}>{label}</div>
-      <div className="ad-sc-statmini-v" style={color ? { color } : undefined}>{value}</div>
     </div>
   );
 }

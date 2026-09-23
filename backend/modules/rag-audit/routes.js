@@ -3,8 +3,10 @@
 //   /api/rag-audit  and  /hlgp/api/rag-audit
 //
 //   GET  /health             → config + model status (admin)
-//   POST /score/:contactId   → AI compliance score + draft report (admin)
+//   POST /score/:contactId   → synchronous AI compliance score (admin)
 //                              ?save=1 also writes a note to the GHL contact
+//   POST /score/:contactId/run → the full background run: score + External
+//                              Review Report + Word + save to GHL (see below)
 // =====================================================================
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -20,8 +22,12 @@ const { groupResponses, assignUploadsToGroups, resolveQId } = require('./fieldMa
 const { attachDocuments } = require('./evidence');
 const { parseBuffer } = require('./docParser');
 const { scoreResponses } = require('./scorer');
-const { generateFullReport } = require('./fullReport');
-const { isConfigured, completeJson, MODEL, PROVIDER, LlmError } = require('./llm');
+const { DEFAULTS: REPORT_DEFAULTS } = require('./fullReport');
+const { renderDocx, docxFileName } = require('./reportDocx');
+const reportStore = require('./reportStore');
+const reportFields = require('./reportFields');
+const { runJob } = require('./aiRun');
+const { isConfigured, completeJson, MODEL, PROVIDER, LlmError, engineStatus } = require('./llm');
 const { retrieveRegulatory: ragRetrieve, isGrounded: isRagGrounded } = require('./rag');
 const questionBank = require('./questionBank');
 const assignments = require('./assignments');
@@ -200,12 +206,19 @@ async function computeClientStatus(contactId) {
 }
 
 router.get('/health', adminAuth, (req, res) => {
-  res.json({ success: true, configured: isConfigured(), provider: PROVIDER, model: MODEL });
+  const engine = engineStatus();
+  res.json({
+    success: true, configured: isConfigured(),
+    // provider/model name the engine that will serve the next call (the
+    // primary unless it is resting after a failure); `engine` lists the
+    // whole chain with each backup's state.
+    provider: engine.active, model: engine.activeModel, primary: PROVIDER, primaryModel: MODEL, engine
+  });
 });
 
 router.post('/score/:contactId', adminAuth, async (req, res) => {
   if (!isConfigured()) {
-    return res.status(503).json({ success: false, message: 'AI scoring is not configured (GROQ_API_KEY missing).' });
+    return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
   }
 
   try {
@@ -259,45 +272,148 @@ router.post('/score/:contactId', adminAuth, async (req, res) => {
   }
 });
 
-// Formal, long-form Independent Evaluation Report — a separate document from
-// the live scorecard above. Takes the ALREADY-SCORED areas (run /score
-// first; the frontend passes result.areas straight through) so this never
-// re-grades — it only asks the model to write the formal narrative +
-// regulatory citations around verdicts already decided. See fullReport.js.
-router.post('/score/:contactId/full-report', adminAuth, async (req, res) => {
+// =====================================================================
+// THE AI RUN — one click on "AI Score" does everything as a background
+// job (aiRun.js): read evidence → score → write the Independent External
+// Review Report → render Word → save as the next version → attach it to
+// the client's GHL contact. Several model calls, 2–10 minutes on a
+// rate-limited key, so the UI polls and whoever comes back later finds
+// the finished result.
+//
+//   POST /score/:contactId/run                     → { jobId }  (202)
+//   GET  /score/:contactId/run/status/:jobId       → progress; score as soon as
+//                                                    it exists; report when done
+//   GET  /score/:contactId/runs                    → running job, last job outcome,
+//                                                    every version, latest report
+//   POST /score/:contactId/full-report             → report-only job from an
+//                                                    already-scored result (202)
+//   GET  /score/:contactId/full-report/:reportId   → one saved report (JSON)
+//   GET  /score/:contactId/full-report/:reportId/docx → Word file for that version
+//   GET  /score/:contactId/ghl-report-files        → the versions GHL holds
+//   GET  /report-defaults                          → auditor/firm defaults
+// =====================================================================
+
+router.get('/report-defaults', adminAuth, (req, res) => {
+  res.json({ success: true, defaults: REPORT_DEFAULTS });
+});
+
+// Engagement details from the UI, sanitised.
+function runOptionsFromBody(body) {
+  const o = body?.options && typeof body.options === 'object' ? body.options : {};
+  const str = v => (v == null ? '' : String(v).trim().slice(0, 200));
+  return {
+    auditorName: str(o.auditorName), auditorCredentials: o.auditorCredentials == null ? undefined : str(o.auditorCredentials),
+    firmName: str(o.firmName), brandName: str(o.brandName),
+    engagementDate: str(o.engagementDate), asAtDate: str(o.asAtDate), concludedDate: str(o.concludedDate)
+  };
+}
+
+function startJob(req, res, kind, extra = {}) {
   if (!isConfigured()) {
-    return res.status(503).json({ success: false, message: 'AI scoring is not configured (GROQ_API_KEY missing).' });
+    return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
   }
+  const contactId = reportStore.safeId(req.params.contactId);
+  if (!contactId) return res.status(400).json({ success: false, message: 'Invalid contact id.' });
+
+  // One run per contact at a time — a double click returns the running job.
+  const running = reportStore.runningJobFor(contactId);
+  if (running) return res.status(202).json({ success: true, ...reportStore.jobView(running), reused: true });
+
+  const job = reportStore.createJob(contactId, kind);
+  // Deliberately not awaited — the client polls the status endpoint.
+  runJob(job, { options: runOptionsFromBody(req.body), ...extra });
+  res.status(202).json({ success: true, ...reportStore.jobView(job) });
+}
+
+router.post('/score/:contactId/run', adminAuth, (req, res) => startJob(req, res, 'full'));
+
+// Report-only: takes an ALREADY-SCORED result (result.areas etc. from a
+// previous score) and writes/saves/attaches a new report version around it.
+router.post('/score/:contactId/full-report', adminAuth, (req, res) => {
   const areas = Array.isArray(req.body?.areas) ? req.body.areas : null;
   if (!areas || !areas.length) {
-    return res.status(400).json({ success: false, message: 'Run AI Score first, then generate the full report from that result.' });
+    return res.status(400).json({ success: false, message: 'Run AI Score first, then generate the report from that result.' });
   }
+  const scoredCtx = {
+    scoredAt: req.body?.scoredAt || new Date().toISOString(),
+    finalScore: Number(req.body?.score) || 0,
+    rating: req.body?.rating || '',
+    criticalFailures: Number(req.body?.criticalFailures) || 0
+  };
+  const str = v => (v == null ? '' : String(v).trim().slice(0, 200));
+  startJob(req, res, 'report', { areas, scoredCtx, entityLabel: str(req.body?.entityLabel) || undefined });
+});
 
+router.get('/score/:contactId/run/status/:jobId', adminAuth, (req, res) => {
+  const job = reportStore.getJob(req.params.jobId);
+  if (!job || job.contactId !== req.params.contactId) {
+    return res.status(404).json({ success: false, message: 'Unknown run (it may have expired — check the versions list, or run AI Score again).' });
+  }
+  const out = { success: true, ...reportStore.jobView(job) };
+  if (job.scoreResult) out.result = job.scoreResult;           // scorecard appears while the report is still being written
+  if (job.status === 'done') out.report = reportStore.getReport(job.contactId, job.reportId);
+  if (job.status === 'error') out.message = `AI run failed: ${job.error}`;
+  res.json(out);
+});
+
+// Everything the console needs on load: is a run in flight, how did the
+// last one end, which versions exist, and the latest report + its score.
+router.get('/score/:contactId/runs', adminAuth, (req, res) => {
   try {
-    const { contact, fields } = await getEnrichedContact(req.params.contactId);
-    const entityLabel = req.body?.entityLabel
-      || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() + (contact.companyName ? ` (${contact.companyName})` : '');
-    const groups = groupResponses(fields);
+    const contactId = req.params.contactId;
+    const running = reportStore.runningJobFor(contactId);
+    const versions = reportStore.listVersions(contactId);
+    const latest = versions[0] ? reportStore.getReport(contactId, versions[0].reportId) : reportStore.latestReport(contactId);
+    res.json({
+      success: true,
+      running: reportStore.jobView(running),
+      lastJob: reportStore.lastJob(contactId),
+      versions,
+      latest: latest ? { report: latest, result: latest.scoreResult || null } : null
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
 
-    const scoredCtx = {
-      scoredAt: req.body?.scoredAt || new Date().toISOString(),
-      finalScore: Number(req.body?.score) || 0,
-      rating: req.body?.rating || '',
-      criticalFailures: Number(req.body?.criticalFailures) || 0
-    };
-
-    const report = await generateFullReport(areas, groups, entityLabel || contact.email || req.params.contactId, scoredCtx);
+router.get('/score/:contactId/full-report/:reportId', adminAuth, (req, res) => {
+  try {
+    const report = reportStore.getReport(req.params.contactId, req.params.reportId);
+    if (!report) return res.status(404).json({ success: false, message: 'Report not found.' });
     res.json({ success: true, report });
   } catch (error) {
-    const msg = error.response?.data?.error?.message || error.response?.data?.message || error.message;
-    console.error('[rag-audit FULL REPORT ERROR]:', msg);
-    let status = 500;
-    if (error instanceof LlmError) {
-      status = error.kind === 'timeout' ? 504 : (error.kind === 'auth' ? 503 : 502);
-    } else if (/Contact not found/i.test(msg)) {
-      status = 404;
-    }
-    res.status(status).json({ success: false, message: `Full report generation failed: ${msg}` });
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/score/:contactId/full-report/:reportId/docx', adminAuth, async (req, res) => {
+  try {
+    const report = reportStore.getReport(req.params.contactId, req.params.reportId);
+    if (!report) return res.status(404).json({ success: false, message: 'Report not found.' });
+    // Serve the exact file that was saved/attached to GHL; re-render only
+    // for a report saved before Word files were kept.
+    const buf = reportStore.getDocx(req.params.contactId, req.params.reportId) || await renderDocx(report);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${report.fileName || docxFileName(report, report.version)}"`);
+    // The Vite dev frontend fetches cross-origin; without this the browser
+    // hides the filename header and the download falls back to a generic name.
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.send(buf);
+  } catch (error) {
+    console.error('[rag-audit DOCX ERROR]:', error.message);
+    res.status(500).json({ success: false, message: `Word export failed: ${error.message}` });
+  }
+});
+
+// The report files as GHL itself holds them on the contact's
+// "AI Score Reports" field — what an admin browsing GHL would see.
+router.get('/score/:contactId/ghl-report-files', adminAuth, async (req, res) => {
+  try {
+    const files = await reportFields.listContactReportFiles(req.params.contactId);
+    res.json({ success: true, files, fields: reportFields.peekFields() });
+  } catch (error) {
+    const msg = error.response?.data?.message || error.message;
+    res.status(/Contact not found/i.test(msg) ? 404 : 500).json({ success: false, message: msg });
   }
 });
 
@@ -309,7 +425,7 @@ router.post('/analyze-upload', adminAuth, (req, res) => {
       const tooBig = uerr.code === 'LIMIT_FILE_SIZE';
       return res.status(tooBig ? 413 : 400).json({ success: false, message: tooBig ? 'A file exceeds the 15 MB limit.' : `Upload error: ${uerr.message}` });
     }
-    if (!isConfigured()) return res.status(503).json({ success: false, message: 'AI scoring is not configured (GROQ_API_KEY missing).' });
+    if (!isConfigured()) return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
 
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });

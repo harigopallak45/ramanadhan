@@ -53,6 +53,14 @@ const EFFICACY_BLEND = 0.6;
 // systemic shortcomings an independent evaluation must call out.
 const CRITICAL_DEDUCTION = 3;
 
+// Ceiling on the TOTAL critical deduction. Without it, an entity with thin
+// evidence (nine critical areas unevidenced = -27) is pushed to 0/100 no
+// matter what its raw weighted mark was, and the printed rating stops
+// carrying any information about what WAS evidenced. The deductions still
+// surface every critical gap (each is listed and flagged), but the final
+// mark stays anchored to the evidence actually reviewed.
+const CRITICAL_DEDUCTION_CAP = 15;
+
 // A critical area counts as a "failure" (and triggers the deduction) when its
 // blended adequacy/efficacy mark falls below this — derived from the NUMBERS,
 // not the model's free-text status, so an inflated label can't hide a gap.
@@ -67,6 +75,19 @@ const RATING_BANDS = [
   { min: 70, label: 'Adequate — Minor Gaps', tone: 'watch' },
   { min: 50, label: 'Deficient — Remediation Required', tone: 'fail' },
   { min: 0,  label: 'Critical — Non-Compliant', tone: 'critical' }
+];
+
+// The "Overall Assessment" wording used in the issued External Review Report
+// (the line printed under the Executive Summary and again in the Overall
+// Conclusion, next to "Indicative Overall Compliance Rating: NN/100"). Same
+// bands as RATING_BANDS, phrased the way the auditor's signed reports phrase
+// them — e.g. a 79/100 entity reads "Effective with Moderate Enhancement
+// Opportunities", not "Adequate — Minor Gaps".
+const ASSESSMENT_BANDS = [
+  { min: 85, label: 'Effective with Minor Enhancement Opportunities' },
+  { min: 70, label: 'Effective with Moderate Enhancement Opportunities' },
+  { min: 50, label: 'Partially Effective — Remediation Required' },
+  { min: 0,  label: 'Not Effective — Significant Remediation Required' }
 ];
 
 // The 23 evidence areas. `critical: true` marks areas where a gap is a
@@ -227,6 +248,10 @@ function toneForScore(score) {
   return (RATING_BANDS.find(b => score >= b.min) || RATING_BANDS[RATING_BANDS.length - 1]).tone;
 }
 
+function assessmentForScore(score) {
+  return (ASSESSMENT_BANDS.find(b => score >= b.min) || ASSESSMENT_BANDS[ASSESSMENT_BANDS.length - 1]).label;
+}
+
 // Sanity check: weights must total 100. Logged once at module load.
 const WEIGHT_TOTAL = RUBRIC.reduce((s, r) => s + r.weight, 0);
 if (WEIGHT_TOTAL !== 100) {
@@ -240,9 +265,12 @@ module.exports = {
   ADEQUACY_BLEND,
   EFFICACY_BLEND,
   CRITICAL_DEDUCTION,
+  CRITICAL_DEDUCTION_CAP,
   CRITICAL_BLEND_THRESHOLD,
   ALLOWED_STATUSES,
   RATING_BANDS,
+  ASSESSMENT_BANDS,
   ratingForScore,
-  toneForScore
+  toneForScore,
+  assessmentForScore
 };

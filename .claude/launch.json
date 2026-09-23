@@ -7,6 +7,13 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend"],
       "port": 5173
+    },
+    {
+      "name": "backend",
+      "//": "Express API + GHL/LLM integration. Reads backend/.env relative to server.js, so the cwd doesn't matter. The Vite dev frontend calls it at http://localhost:5001.",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-experimental-fetch", "backend/server.js"],
+      "port": 5001
     }
   ]
 }

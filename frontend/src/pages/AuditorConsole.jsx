@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Topbar from '../components/layout/Topbar';
 import ResultBreakdown from '../components/ResultBreakdown';
 import AssignedQuestionsPanel from '../components/AssignedQuestionsPanel';
 import EditPermissionPicker from '../components/EditPermissionPicker';
 import QuestionAnswerFields from '../components/QuestionAnswerFields';
+import FormalReportPanel from '../components/FormalReportPanel';
+import EngagementDetails from '../components/EngagementDetails';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -73,16 +75,21 @@ export default function AuditorConsole() {
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
 
-  const [scoring, setScoring] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [showFullDraft, setShowFullDraft] = useState(false);
   const [requestedIds, setRequestedIds] = useState(new Set());
-  const [fullReport, setFullReport] = useState(null);
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [fullReportError, setFullReportError] = useState('');
+
+  // The AI run: one click scores, writes the External Review Report, renders
+  // Word and files it on the GHL contact — as a server-side job we poll.
+  const [run, setRun] = useState(null);            // { jobId, stage, kind } while running
+  const [lastJob, setLastJob] = useState(null);    // outcome of the previous run (server-persisted)
+  const [report, setReport] = useState(null);      // the report version on screen
+  const [versions, setVersions] = useState([]);
+  const [engagement, setEngagement] = useState(null); // engagement details for the next run
+  const pollRef = useRef(null);
 
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [requestMsg, setRequestMsg] = useState('');
@@ -197,63 +204,101 @@ export default function AuditorConsole() {
     return hay.includes(searchLower);
   }
 
-  // ---- AI scoring ----------------------------------------------------
+  // ---- The AI run ----------------------------------------------------
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  // Poll one job. The scorecard appears as soon as the scoring stage is
+  // done; the report and the new version land when the whole run finishes.
+  const pollRun = useCallback((jobId) => {
+    stopPolling();
+    const tick = async () => {
+      try {
+        const st = await ragApi.runStatus(contactId, jobId);
+        if (st.result) setAiResult((prev) => (prev && prev.scoredAt === st.result.scoredAt ? prev : st.result));
+        if (st.status === 'running') { setRun({ jobId, kind: st.kind, stage: st.stage }); return; }
+        stopPolling();
+        setRun(null);
+        if (st.status === 'done') {
+          if (st.report) { setReport(st.report); if (st.report.scoreResult) setAiResult(st.report.scoreResult); }
+          setRequestedIds(new Set());
+          setLastJob({ status: 'done', version: st.version, finishedAt: st.finishedAt });
+          try { const r = await ragApi.runs(contactId); setVersions(r.versions || []); } catch { /* list refreshes next load */ }
+          toast(`AI run complete — report v${st.version} filed on the client's contact`);
+        } else {
+          setAiError(st.message || 'The AI run failed.');
+          setLastJob({ status: 'error', error: st.message, finishedAt: st.finishedAt });
+        }
+      } catch (err) {
+        stopPolling();
+        setRun(null);
+        setAiError(err.message);
+      }
+    };
+    tick();
+    pollRef.current = setInterval(tick, 3000);
+  }, [contactId, stopPolling, toast]);
+
+  // On load: last outcome, saved versions, the latest report + its score,
+  // and — if a run is still going from an earlier visit — pick it up.
+  useEffect(() => {
+    let cancelled = false;
+    ragApi.runs(contactId).then((d) => {
+      if (cancelled) return;
+      setVersions(d.versions || []);
+      setLastJob(d.lastJob || null);
+      if (d.latest) {
+        setReport(d.latest.report || null);
+        if (d.latest.result) setAiResult(d.latest.result);
+        setAiPanelOpen(true);
+      }
+      if (d.running) { setRun({ jobId: d.running.jobId, kind: d.running.kind, stage: d.running.stage }); setAiPanelOpen(true); pollRun(d.running.jobId); }
+    }).catch(() => { /* nothing saved yet is the normal case */ });
+    return () => { cancelled = true; stopPolling(); };
+  }, [contactId, pollRun, stopPolling]);
+
   async function runAiScore() {
-    if (scoring || uploading) return;
-    setScoring(true);
+    if (run || uploading) return;
     setAiError('');
     setAiPanelOpen(true);
-    setFullReport(null); // a new score invalidates any previously-generated formal report
-    setFullReportError('');
     try {
-      const data = await ragApi.score(contactId);
-      setAiResult(data.result);
-      setRequestedIds(new Set());
+      const d = await ragApi.startRun(contactId, engagement || {});
+      setRun({ jobId: d.jobId, kind: d.kind || 'full', stage: d.stage || { step: 0, total: 0, label: 'Starting' } });
+      pollRun(d.jobId);
     } catch (err) {
       setAiError(err.message);
-    } finally {
-      setScoring(false);
     }
   }
 
-  // A formal, long-form report — separate from the live scorecard above.
-  // Never re-grades; writes the auditor narrative + regulatory citations
-  // around the verdicts runAiScore already decided.
-  async function generateFullReport() {
-    if (!aiResult || generatingReport) return;
-    setGeneratingReport(true);
-    setFullReportError('');
+  // A new report version around the score already on screen (no re-score).
+  async function runReportOnly() {
+    if (run || uploading || !aiResult) return;
+    setAiError('');
+    setAiPanelOpen(true);
     try {
-      const data = await ragApi.fullReport(contactId, aiResult);
-      setFullReport(data.report);
+      const d = await ragApi.startReportRun(contactId, aiResult, engagement || {});
+      setRun({ jobId: d.jobId, kind: d.kind || 'report', stage: d.stage || { step: 0, total: 0, label: 'Starting' } });
+      pollRun(d.jobId);
     } catch (err) {
-      setFullReportError(err.message);
-    } finally {
-      setGeneratingReport(false);
+      setAiError(err.message);
     }
   }
 
-  function copyFullReport() {
-    if (!fullReport) return;
-    navigator.clipboard.writeText(fullReport.fullText);
-    toast('Full report copied to clipboard');
-  }
-
-  function exportFullReportPdf() {
-    if (!fullReport) return;
-    const w = window.open('', '_blank');
-    if (!w) { toast('Pop-up blocked — allow pop-ups to export.', 'error'); return; }
-    w.document.write(`<html><head><title>${escapeHtml(entityName)} — Independent Evaluation Report</title>
-      <style>body{font-family:Georgia,serif;padding:40px;color:#111;white-space:pre-wrap;line-height:1.65;font-size:14px;} h1{font-size:18px;}</style>
-      </head><body>${escapeHtml(fullReport.fullText)}</body></html>`);
-    w.document.close();
-    w.focus();
-    w.print();
+  async function selectVersion(v) {
+    try {
+      const d = await ragApi.getFullReport(contactId, v.reportId);
+      setReport(d.report);
+      if (d.report?.scoreResult) setAiResult(d.report.scoreResult);
+      setAiPanelOpen(true);
+    } catch (err) {
+      toast(`Couldn't open v${v.version}: ${err.message}`, 'error');
+    }
   }
 
   async function uploadAndAnalyze(fileList) {
     const files = Array.from(fileList || []);
-    if (!files.length) return;
+    if (!files.length || run) return;
     setUploading(true);
     setAiError('');
     setAiPanelOpen(true);
@@ -495,10 +540,10 @@ export default function AuditorConsole() {
           <div className="ac-header-right">
             <p className="faint" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, marginBottom: 12 }}>GHL ID: {contact?.id}</p>
             <div className="ac-actions">
-              <Button variant="secondary" className="ac-gold-outline" disabled={scoring || uploading} onClick={runAiScore}>
-                {scoring ? '✦ Scoring…' : '✦ AI Score'}
+              <Button variant="secondary" className="ac-gold-outline" disabled={!!run || uploading} onClick={runAiScore} title="Score the evidence, write the External Review Report, render Word and file it on the GHL contact">
+                {run ? '✦ Running…' : '✦ AI Score'}
               </Button>
-              <Button variant="secondary" className="ac-gold-outline" disabled={scoring || uploading} onClick={() => fileInputRef.current?.click()}>
+              <Button variant="secondary" className="ac-gold-outline" disabled={!!run || uploading} onClick={() => fileInputRef.current?.click()}>
                 {uploading ? '⬆ Analyzing…' : '⬆ Upload documents'}
               </Button>
               <input
@@ -532,13 +577,19 @@ export default function AuditorConsole() {
           </div>
         )}
 
+        <EngagementDetails value={engagement} onChange={setEngagement} disabled={!!run} />
+
         {aiPanelOpen && (
           <div className="card ac-ai-panel">
-            {scoring && (
-              <div className="ac-ai-loading">
-                <div className="eyebrow" style={{ color: 'var(--gold)' }}>Centinl AI Reviewer</div>
-                <div style={{ marginTop: 14, fontSize: 15 }}>Checking all evidence areas against AUSTRAC rules…</div>
-                <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>This usually takes 5–15 seconds.</div>
+            {run && <RunProgress run={run} />}
+            {!run && lastJob?.status === 'error' && !aiError && (
+              <div className="ac-ai-warn ac-ai-warn--pending">
+                ⚠ The last AI run did not finish{lastJob.stage?.label ? ` (stopped at: ${lastJob.stage.label})` : ''}{lastJob.error ? ` — ${lastJob.error}` : ''}. Click AI Score to run it again.
+              </div>
+            )}
+            {!run && lastJob?.status === 'running' && (
+              <div className="ac-ai-warn ac-ai-warn--pending">
+                ⚠ A previous AI run was interrupted (the server restarted){lastJob.stage?.label ? ` while ${lastJob.stage.label.toLowerCase()}` : ''}. Click AI Score to run it again.
               </div>
             )}
             {uploading && (
@@ -548,10 +599,10 @@ export default function AuditorConsole() {
                 <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Files are sorted into sections automatically by content.</div>
               </div>
             )}
-            {!scoring && !uploading && aiError && (
+            {!uploading && aiError && (
               <div className="ac-ai-error">The AI couldn't finish: {aiError}</div>
             )}
-            {!scoring && !uploading && aiResult && (
+            {!uploading && aiResult && (
               <AiScorecard
                 result={aiResult}
                 answeredCount={answeredCount}
@@ -564,15 +615,23 @@ export default function AuditorConsole() {
                 onRescore={runAiScore}
                 showFullDraft={showFullDraft}
                 setShowFullDraft={setShowFullDraft}
-                fullReport={fullReport}
-                generatingReport={generatingReport}
-                fullReportError={fullReportError}
-                onGenerateFullReport={generateFullReport}
-                onCopyFullReport={copyFullReport}
-                onExportFullReportPdf={exportFullReportPdf}
               />
             )}
           </div>
+        )}
+
+        {/* The issued document — every run files a new version; the last one
+            is shown here on load and older ones can be reopened. */}
+        {!loading && (
+          <FormalReportPanel
+            contactId={contactId}
+            report={report}
+            versions={versions}
+            running={run}
+            onSelectVersion={selectVersion}
+            onNewVersion={runReportOnly}
+            canNewVersion={!!aiResult}
+          />
         )}
 
         <div className="ac-console-head">
@@ -735,9 +794,30 @@ function QuestionCard({ q, answer, onPreview, editing, onToggleEdit, onSave, onU
   );
 }
 
+// Progress of the background run — stage label + bar. Stays honest about
+// timing: on a rate-limited model key a full run is 2–10 minutes.
+function RunProgress({ run }) {
+  const stage = run.stage || {};
+  const pct = stage.total ? Math.max(4, Math.round((stage.step / stage.total) * 100)) : 4;
+  return (
+    <div className="ac-run">
+      <div className="row" style={{ justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div className="eyebrow" style={{ color: 'var(--gold)' }}>Centinl AI Reviewer · {run.kind === 'report' ? 'writing a new report version' : 'AI Score run'}</div>
+          <div style={{ marginTop: 8, fontSize: 15 }}>{stage.label || 'Starting'}…</div>
+        </div>
+        <div className="faint" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{stage.total ? `step ${stage.step} of ${stage.total}` : 'preparing'}</div>
+      </div>
+      <div className="progress ac-run-bar"><div style={{ width: `${pct}%` }} /></div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+        Score → full External Review Report → Word file → filed on the GHL contact. This takes 2–10 minutes; you can leave this page and come back — the result is saved when it finishes.
+      </div>
+    </div>
+  );
+}
+
 function AiScorecard({
-  result: r, answeredCount, evidenceGaps, requestedIds, onRequest, onCopy, onSave, onExportPdf, onRescore, showFullDraft, setShowFullDraft,
-  fullReport, generatingReport, fullReportError, onGenerateFullReport, onCopyFullReport, onExportFullReportPdf
+  result: r, answeredCount, evidenceGaps, requestedIds, onRequest, onCopy, onSave, onExportPdf, onRescore, showFullDraft, setShowFullDraft
 }) {
   const scoredAt = r.scoredAt ? new Date(r.scoredAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   const scoreTone = SCORE_TONE[r.tone] || 'danger';
@@ -758,7 +838,8 @@ function AiScorecard({
           </div>
           <div>
             <Badge tone={scoreTone}>{r.rating}</Badge>
-            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Scored {scoredAt}{r.grounded === false ? ' · ungrounded' : ''}</div>
+            {r.assessment && <div className="ac-assessment">Overall Assessment: <strong>{r.assessment}</strong></div>}
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Indicative Overall Compliance Rating {r.score}/100 · scored {scoredAt}{r.grounded === false ? ' · ungrounded' : ''}</div>
           </div>
         </div>
         <div className="row gap-2">
@@ -858,51 +939,6 @@ function AiScorecard({
           {showFullDraft ? 'Hide full draft report' : 'View full draft report'}
         </button>
         {showFullDraft && <pre className="ac-draft-pre">{r.draftReport}</pre>}
-      </div>
-
-      <div className="ac-full-report">
-        <div className="ac-full-report-head">
-          <div>
-            <div className="eyebrow">Formal report</div>
-            <p className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
-              A longer, formal Independent Evaluation Report — proper sections, paragraph-length findings, and
-              regulatory citations where the knowledge base actually supports one. Separate from the quick scorecard
-              above; doesn't re-grade anything.
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" className="ac-gold-outline" disabled={generatingReport} onClick={onGenerateFullReport}>
-            {generatingReport ? 'Generating…' : fullReport ? 'Regenerate full report' : 'Generate full report'}
-          </Button>
-        </div>
-
-        {generatingReport && (
-          <div className="ac-ai-loading" style={{ marginTop: 12 }}>
-            <div className="muted" style={{ fontSize: 13 }}>Writing the formal report — this takes longer than the quick score.</div>
-          </div>
-        )}
-        {!generatingReport && fullReportError && (
-          <div className="ac-ai-error" style={{ marginTop: 12 }}>The report couldn't be generated: {fullReportError}</div>
-        )}
-        {!generatingReport && fullReport && (
-          <>
-            {fullReport.missingNarratives?.length > 0 && (
-              <div className="ac-ai-warn" style={{ marginTop: 12 }}>
-                ⚠ The model didn't return a written finding for {fullReport.missingNarratives.length} area(s)
-                ({fullReport.missingNarratives.join(', ')}) — their one-line finding from the scorecard was used instead.
-              </div>
-            )}
-            {fullReport.grounded === false && (
-              <div className="ac-ai-warn ac-ai-warn--pending" style={{ marginTop: 12 }}>
-                ⚠ No AUSTRAC knowledge base is loaded — this report has no regulatory citations.
-              </div>
-            )}
-            <div className="row gap-2" style={{ marginTop: 12 }}>
-              <Button variant="ghost" size="sm" onClick={onCopyFullReport}>Copy report</Button>
-              <Button variant="ghost" size="sm" onClick={onExportFullReportPdf}>Export PDF</Button>
-            </div>
-            <pre className="ac-draft-pre" style={{ marginTop: 12 }}>{fullReport.fullText}</pre>
-          </>
-        )}
       </div>
 
       <div className="ac-ai-footer">

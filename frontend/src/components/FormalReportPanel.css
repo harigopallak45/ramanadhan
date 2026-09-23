@@ -1,0 +1,27 @@
+.frp { margin-bottom: 28px; padding: 26px 28px; }
+.frp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.frp-blurb { font-size: 12.5px; margin-top: 6px; max-width: 720px; line-height: 1.55; }
+.frp-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.frp-empty { margin-top: 16px; padding: 18px; text-align: center; color: var(--text-dim); font-size: 13.5px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
+.frp-report-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 18px 0 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+.frp-warnings { margin: 6px 0 0; padding-left: 18px; }
+.frp-warnings li { margin-bottom: 3px; }
+
+@media (max-width: 860px) {
+  .frp { padding: 20px 18px; }
+  .frp-head { flex-direction: column; }
+  .frp-actions { justify-content: flex-start; }
+  .frp-details { grid-template-columns: 1fr; }
+}
+
+/* Version list */
+.frp-versions { margin-top: 16px; padding: 12px 14px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-md); overflow-x: auto; }
+.frp-versions-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.frp-versions-table th { text-align: left; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.frp-versions-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.frp-versions-table tr.is-current td { background: var(--gold-wash); }
+.frp-versions-assessment { color: var(--text-dim); }
+.frp-versions-actions { text-align: right; white-space: nowrap; }
+.frp-versions-table a { color: var(--success); font-weight: 500; text-decoration: none; }
+.frp-versions-table a:hover { text-decoration: underline; }
+.frp-filed { font-size: 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
