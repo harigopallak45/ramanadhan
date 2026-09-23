@@ -40,7 +40,15 @@ function effectiveStatus(user, perClient) {
 // The tooltip lists the whole chain with each engine's state.
 function EngineChip({ engine, className = '' }) {
   if (!engine) return <span className={`ad-engine-chip ${className}`}>engine…</span>;
-  if (!engine.configured) return <span className={`ad-engine-chip off ${className}`}>AI not set up</span>;
+  // Hovering says WHY. "AI not set up" on its own meant reading .env by hand
+  // on the server to find a stray inline comment or a missing key.
+  if (!engine.configured) {
+    return (
+      <span className={`ad-engine-chip off ${className}`} title={engine.problem || 'No AI provider configured'}>
+        AI not set up
+      </span>
+    );
+  }
   const chain = Array.isArray(engine.engine?.chain) ? engine.engine.chain : [];
   const backups = chain.filter((c) => c.role === 'backup' && c.configured);
   const onBackup = engine.engine?.active && engine.engine.active !== engine.engine.primary;

@@ -38,7 +38,20 @@
 // =====================================================================
 const axios = require('axios');
 
-const PROVIDER = (process.env.LLM_PROVIDER || 'groq').toLowerCase().trim();
+// Settings whose values can never legally contain a space — provider ids and
+// model names. Older dotenv versions don't strip a trailing `# comment`, so a
+// line copied from .env.example as `LLM_PROVIDER=groq   # groq | openai | …`
+// yields the whole string, PROVIDERS[PROVIDER] misses, and the entire engine
+// silently reports "not configured" with a perfectly good API key sitting
+// right there. Cut at the first whitespace and drop surrounding quotes.
+function envWord(name, fallback = '') {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null) return fallback;
+  const cleaned = String(raw).trim().replace(/^['"]|['"]$/g, '').split(/\s+/)[0];
+  return cleaned || fallback;
+}
+
+const PROVIDER = envWord('LLM_PROVIDER', 'groq').toLowerCase();
 
 // Per-provider configuration. Defaults keep the existing Groq .env working
 // with no changes (LLM_PROVIDER unset → groq).
@@ -52,7 +65,7 @@ const PROVIDERS = {
     // own recommended successor is openai/gpt-oss-120b. If this one is ever
     // retired too, set GROQ_MODEL in the environment rather than editing
     // code; `GET /v1/models` on the Groq API lists what a key can access.
-    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+    model: envWord('GROQ_MODEL') || 'openai/gpt-oss-120b',
     style: 'openai',
     keyRequired: true,
     // Groq's free tier meters 8k tokens/minute for gpt-oss-120b; assume
@@ -64,7 +77,7 @@ const PROVIDERS = {
     id: 'openai',
     url: process.env.OPENAI_URL || 'https://api.openai.com/v1/chat/completions',
     apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    model: envWord('OPENAI_MODEL') || 'gpt-4o-mini',
     style: 'openai',
     keyRequired: true,
     defaultTokenLimit: 0
@@ -73,7 +86,7 @@ const PROVIDERS = {
     id: 'anthropic',
     url: process.env.ANTHROPIC_URL || 'https://api.anthropic.com/v1/messages',
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
+    model: envWord('ANTHROPIC_MODEL') || 'claude-sonnet-5',
     style: 'anthropic',
     keyRequired: true,
     defaultTokenLimit: 0
@@ -84,7 +97,7 @@ const PROVIDERS = {
     // llama.cpp server too (point LOCAL_LLM_URL at theirs).
     url: process.env.LOCAL_LLM_URL || 'http://localhost:11434/v1/chat/completions',
     apiKey: process.env.LOCAL_LLM_API_KEY || 'not-needed',
-    model: process.env.LOCAL_LLM_MODEL || 'llama3.1',
+    model: envWord('LOCAL_LLM_MODEL') || 'llama3.1',
     style: 'openai',
     keyRequired: false, // a local server needs no key — reachability is checked at call time
     defaultTokenLimit: 0
@@ -130,6 +143,24 @@ let lastServed = ''; // provider id that completed the most recent call
 
 function isConfigured() { return CHAIN.some(id => providerConfigured(PROVIDERS[id])); }
 
+// Human-readable reason the engine can't serve a call, or '' when it can.
+// "AI not set up" on its own sent us hunting through .env by hand; this names
+// the actual cause so the dashboard and the 503s can repeat it verbatim.
+function configProblem() {
+  if (!CFG) {
+    return `LLM_PROVIDER is "${PROVIDER}", which is not one of: ${Object.keys(PROVIDERS).join(', ')}.`;
+  }
+  if (!isConfigured()) {
+    const needed = CHAIN.map(id => `${id.toUpperCase()}_API_KEY`).join(' or ');
+    return `No API key set for the configured engine${CHAIN.length > 1 ? 's' : ''} (${CHAIN.join(', ')}) — set ${needed}.`;
+  }
+  return '';
+}
+
+if (configProblem()) {
+  console.warn(`[LLM] AI scoring is disabled: ${configProblem()}`);
+}
+
 const FAILOVER_COOLDOWN_MS = Math.max(0, parseInt(process.env.LLM_FAILOVER_COOLDOWN_MS || '300000', 10)); // 5 min
 const FAILOVER_AUTH_COOLDOWN_MS = Math.max(FAILOVER_COOLDOWN_MS, 30 * 60 * 1000); // a rejected key won't fix itself soon
 
@@ -157,6 +188,7 @@ function engineStatus() {
   const active = activeProviderId();
   return {
     primary: PROVIDER,
+    problem: configProblem(),
     fallbacks: CHAIN.slice(1),
     active,
     activeModel: (PROVIDERS[active] || CFG || {}).model || 'unknown',
@@ -437,6 +469,6 @@ async function completeJson({ system, user, temperature = 0.2, maxTokens = 8000 
 }
 
 module.exports = {
-  completeJson, isConfigured, MODEL, PROVIDER, LlmError,
+  completeJson, isConfigured, configProblem, MODEL, PROVIDER, LlmError,
   activeEngine, engineStatus, getTokenLimit, estimateTokens, CHARS_PER_TOKEN
 };

@@ -27,7 +27,7 @@ const { renderDocx, docxFileName } = require('./reportDocx');
 const reportStore = require('./reportStore');
 const reportFields = require('./reportFields');
 const { runJob } = require('./aiRun');
-const { isConfigured, completeJson, MODEL, PROVIDER, LlmError, engineStatus } = require('./llm');
+const { isConfigured, configProblem, completeJson, MODEL, PROVIDER, LlmError, engineStatus } = require('./llm');
 const { retrieveRegulatory: ragRetrieve, isGrounded: isRagGrounded } = require('./rag');
 const questionBank = require('./questionBank');
 const assignments = require('./assignments');
@@ -209,6 +209,9 @@ router.get('/health', adminAuth, (req, res) => {
   const engine = engineStatus();
   res.json({
     success: true, configured: isConfigured(),
+    // Empty when healthy; otherwise the exact reason, so the dashboard chip
+    // can explain itself instead of just saying "not set up".
+    problem: configProblem(),
     // provider/model name the engine that will serve the next call (the
     // primary unless it is resting after a failure); `engine` lists the
     // whole chain with each backup's state.
@@ -218,7 +221,7 @@ router.get('/health', adminAuth, (req, res) => {
 
 router.post('/score/:contactId', adminAuth, async (req, res) => {
   if (!isConfigured()) {
-    return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
+    return res.status(503).json({ success: false, message: `AI scoring is not configured. ${configProblem()}` });
   }
 
   try {
@@ -310,7 +313,7 @@ function runOptionsFromBody(body) {
 
 function startJob(req, res, kind, extra = {}) {
   if (!isConfigured()) {
-    return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
+    return res.status(503).json({ success: false, message: `AI scoring is not configured. ${configProblem()}` });
   }
   const contactId = reportStore.safeId(req.params.contactId);
   if (!contactId) return res.status(400).json({ success: false, message: 'Invalid contact id.' });
@@ -425,7 +428,7 @@ router.post('/analyze-upload', adminAuth, (req, res) => {
       const tooBig = uerr.code === 'LIMIT_FILE_SIZE';
       return res.status(tooBig ? 413 : 400).json({ success: false, message: tooBig ? 'A file exceeds the 15 MB limit.' : `Upload error: ${uerr.message}` });
     }
-    if (!isConfigured()) return res.status(503).json({ success: false, message: 'AI scoring is not configured (no model API key set — see LLM_PROVIDER in .env).' });
+    if (!isConfigured()) return res.status(503).json({ success: false, message: `AI scoring is not configured. ${configProblem()}` });
 
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
